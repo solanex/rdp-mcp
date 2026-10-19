@@ -5,25 +5,57 @@ muis en het toetsenbord kan bedienen, terwijl jij live meekijkt in een gewoon
 venster en op elk moment zelf kunt ingrijpen.
 
 ```
-┌──────────────────────┐  Unix-socket   ┌──────────────┐   stdio/MCP   ┌──────────────┐
-│  rdp-mcp-client      │ ◄────────────► │  rdp-mcp     │ ◄───────────► │ Claude Code  │
-│  (C, FreeRDP + SDL3) │  ~/.rdp-mcp/   │  (Python)    │               │ / Desktop    │
-│  venster voor jou    │   <pid>.sock   │  MCP-server  │               │              │
-└──────────┬───────────┘                └──────────────┘               └──────────────┘
+┌──────────────────────┐  Unix-socket    ┌──────────────┐   stdio/MCP   ┌──────────────┐
+│  RDP MCP.app (tabs)  │ ◄─────────────► │  rdp-mcp     │ ◄───────────► │ Claude Code  │
+│  of rdp-mcp-client   │  ~/.rdp-mcp/    │  (Python)    │               │ / Desktop    │
+│  venster voor jou    │  <pid>-<n>.sock │  MCP-server  │               │              │
+└──────────┬───────────┘  (per sessie)   └──────────────┘               └──────────────┘
            │ RDP
            ▼
-     Windows-machine
+     Windows-machines
 ```
 
-- **client/**: een kleine RDP-client op basis van libfreerdp3 en SDL3. Hij toont de
-  sessie, stuurt jouw muis en toetsenbord door en opent een control-socket.
-- **mcp/**: een MCP-server die met die socket praat en tools aanbiedt voor
-  screenshot, klikken, typen, sneltoetsen, scrollen en slepen.
+- **mac/**: de Mac-app "RDP MCP" met adresboek, wachtwoorden in de sleutelhanger,
+  tabs en volledig scherm.
+- **core/**: de gedeelde C-kern op basis van libfreerdp3. Ze beheert sessies, beeld,
+  invoer, klembord en een control-socket per sessie.
+- **client/**: een eenvoudige SDL3-client voor één sessie, met de gewone
+  FreeRDP-opties. Handig voor tests en op Linux.
+- **mcp/**: een MCP-server die met de sockets praat en tools aanbiedt voor
+  screenshot, klikken, typen, sneltoetsen, scrollen, slepen en het klembord.
 
-Wachtwoorden en certificaatvragen lopen via de terminal waarin je de client start.
-Ze komen nooit bij de AI terecht.
+Wachtwoorden en certificaatvragen lopen via de app of de terminal. Ze komen nooit
+bij de AI terecht.
 
-## Installeren (macOS)
+## Mac-app
+
+```sh
+brew install freerdp
+./mac/build-app.sh            # maakt mac/build/RDP MCP.app
+open "mac/build/RDP MCP.app"
+```
+
+- **Adresboek** in de zijbalk, met groepen. Je bewaart naam, host, poort, gebruiker,
+  domein, gateway, resolutie, toetsenbord en opties in
+  `~/Library/Application Support/rdp-mcp/hosts.json`. Wachtwoorden staan daar nooit in.
+- **Wachtwoorden** gaan naar je login-sleutelhanger, versleuteld door macOS. Optioneel
+  vraagt de app Touch ID of je Mac-wachtwoord voor ze gebruikt worden. Dat is een
+  controle in de app zelf: voor een harde sleutelhangerregel moet de app ondertekend
+  zijn met een Apple Developer-account. Omdat de app ad-hoc ondertekend is, vraagt
+  macOS na elke nieuwe build één keer of ze bij de sleutelhanger mag.
+- **Tabs:** één tab per sessie. Wisselen met ⌥⌘← / ⌥⌘→, sluiten met ⌥⌘W, opnieuw
+  verbinden met ⌥⌘R.
+- **Volledig scherm** met ⌃⌘F of de knop rechts in de tabbalk. Zijbalk en tabbalk
+  verdwijnen dan; beweeg de muis naar de bovenrand om de tabs te zien.
+- **Dynamische resolutie:** met "Automatisch" volgt de Windows-resolutie de grootte
+  van het tabblad, ook bij volledig scherm.
+- **Toetsenbord:** alles gaat naar Windows, ook Cmd-combinaties (Cmd = Ctrl, in te
+  stellen in Instellingen). Alleen ⌥⌘-combinaties, ⌃⌘F en ⌘Q blijven op de Mac.
+- **AI-besturing** per tab: de schakelaar in de statusbalk, ⌥⌘A of ⌃⌥⇧A in de sessie.
+  In de MCP-tools heet een sessie zoals in het adresboek, zodat je Claude kunt vragen
+  om "in PC01" iets te doen.
+
+## SDL-client installeren
 
 ```sh
 brew install freerdp cmake
@@ -47,7 +79,7 @@ Op Linux werkt het ook. Je hebt dan de ontwikkelpakketten van FreeRDP 3 en SDL3 
    ```
 
    Je krijgt de wachtwoordvraag in de terminal. Na het verbinden opent het venster
-   en verschijnt `MCP-control-socket: ~/.rdp-mcp/<pid>.sock`.
+   en verschijnt `MCP-control-socket: ~/.rdp-mcp/<pid>-1.sock`.
 
    Handige opties:
    - `/size:1920x1080`: resolutie van de remote sessie

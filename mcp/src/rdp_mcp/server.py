@@ -50,13 +50,21 @@ def _pick(session: str | None) -> tuple[Session, SessionInfo]:
         )
     if session is None:
         if len(sessions) > 1:
-            ids = ", ".join(f"{i.id} ({i.host})" for _, i in sessions)
-            raise ToolError(f"meerdere sessies actief, geef 'session' op: {ids}")
-        return sessions[0]
-    for s, info in sessions:
-        if s.id == session:
-            return s, info
-    raise ToolError(f"sessie '{session}' niet gevonden")
+            ids = ", ".join(f"{i.id} ({i.name})" for _, i in sessions)
+            raise ToolError(f"meerdere sessies actief, geef 'session' op (id of naam): {ids}")
+        found = sessions[0]
+    else:
+        matches = [x for x in sessions if x[1].id == session] or [
+            x for x in sessions if x[1].name.lower() == session.lower()
+        ]
+        if not matches:
+            raise ToolError(f"sessie '{session}' niet gevonden")
+        if len(matches) > 1:
+            raise ToolError(f"meerdere sessies heten '{session}', gebruik het id")
+        found = matches[0]
+    if found[1].width <= 0:
+        raise ToolError(f"sessie {found[1].name} is nog aan het verbinden; probeer zo opnieuw")
+    return found
 
 
 def _scale(info: SessionInfo) -> float:
@@ -115,11 +123,16 @@ def _click(conn: Connection, button: str, rx: int, ry: int, clicks: int) -> None
 
 @mcp.tool()
 def list_rdp_sessions() -> list[dict]:
-    """Toon de actieve rdp-mcp-sessies (id, host, resolutie, AI-besturing aan/uit)."""
+    """Toon de actieve rdp-mcp-sessies (id, naam, host, resolutie, AI-besturing aan/uit).
+
+    Geef bij de andere tools 'session' op met het id of de naam als er meerdere zijn.
+    """
     return [
         {
             "session": info.id,
+            "name": info.name,
             "host": info.host,
+            "connected": info.width > 0,
             "width": info.width,
             "height": info.height,
             "ai_control_enabled": info.ai_enabled,
@@ -152,7 +165,7 @@ def screenshot(session: str | None = None) -> list:
         img.save(buf, format="PNG", optimize=True)
         fmt = "png"
     note = (
-        f"Sessie {info.id} ({info.host}), remote {w}x{h}, screenshot "
+        f"Sessie {info.id} '{info.name}' ({info.host}), remote {w}x{h}, screenshot "
         f"{img.width}x{img.height}. AI-besturing: {'aan' if info.ai_enabled else 'UIT'}."
     )
     return [note, Image(data=buf.getvalue(), format=fmt)]

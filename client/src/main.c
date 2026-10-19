@@ -1,372 +1,86 @@
-/* rdp-mcp-client: kleine RDP-client op basis van FreeRDP + SDL3.
+/* rdp-mcp-client: eenvoudige SDL3-frontend voor één sessie, met de gewone
+ * FreeRDP-opdrachtregelopties. Handig voor tests en op Linux; op de Mac is er
+ * ook de app in mac/.
  *
- * De gebruiker ziet en bedient de sessie in een gewoon venster. Via een
- * Unix-socket (control.c) kan een MCP-server tegelijk screenshots nemen en
- * muis-/toetsenbordinvoer sturen. Ctrl+Alt+Shift+A zet AI-besturing aan/uit. */
+ * Ctrl+Alt+Shift+A zet AI-besturing aan/uit. */
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include <freerdp/client/cmdline.h>
-#include <freerdp/gdi/gdi.h>
-#include <freerdp/client/cliprdr.h>
-#include <freerdp/input.h>
-#include <winpr/synch.h>
-
-#include "rdpmcp.h"
-
-Uint32 RDPMCP_EVENT_PAINT;
-Uint32 RDPMCP_EVENT_RESIZE;
-Uint32 RDPMCP_EVENT_DISCONNECTED;
-Uint32 RDPMCP_EVENT_AI;
-Uint32 RDPMCP_EVENT_CLIPBOARD;
+#include "keymap.h"
+#include "rdpmcp_core.h"
 
 #define AI_HIGHLIGHT_MS 1500
 
-void rdpmcp_push_event(Uint32 type)
+static Uint32 EV_FRAME;
+static Uint32 EV_STATE;
+static Uint32 EV_AI;
+static Uint32 EV_CLIPBOARD;
+
+typedef struct
+{
+	rdpmcp_session* session;
+	SDL_Window* window;
+	SDL_Renderer* renderer;
+	SDL_Texture* texture;
+	int tex_w, tex_h;
+	bool window_sized;
+	bool cmd_as_win;
+	const char* host;
+	uint64_t ai_last;
+	int ai_x, ai_y;
+} app_t;
+
+/* ---------- callbacks (achtergrondthreads) ---------- */
+
+static void push(Uint32 type, Sint32 code, void* data1, void* data2)
 {
 	SDL_Event ev = { 0 };
 	ev.type = type;
+	ev.user.code = code;
+	ev.user.data1 = data1;
+	ev.user.data2 = data2;
 	SDL_PushEvent(&ev);
 }
 
-/* ---------- framebuffer (rdp-thread) ---------- */
-
-/* Kopieert een rechthoek uit de FreeRDP-GDI-buffer naar onze eigen buffer.
- * Bij een andere resolutie wordt de buffer opnieuw aangemaakt en volledig gevuld. */
-static void fb_update(mcpContext* mc, int x, int y, int w, int h)
+static void cb_frame(void* user)
 {
-	rdpGdi* gdi = mc->common.context.gdi;
-	const int gw = (int)gdi->width;
-	const int gh = (int)gdi->height;
-
-	pthread_mutex_lock(&mc->fb_lock);
-	if (!mc->fb || mc->fb_w != gw || mc->fb_h != gh)
-	{
-		uint8_t* fb = realloc(mc->fb, (size_t)gw * gh * 4);
-		if (!fb)
-		{
-			pthread_mutex_unlock(&mc->fb_lock);
-			return;
-		}
-		mc->fb = fb;
-		mc->fb_w = gw;
-		mc->fb_h = gh;
-		mc->fb_resized = true;
-		x = 0;
-		y = 0;
-		w = gw;
-		h = gh;
-	}
-
-	if (x < 0) { w += x; x = 0; }
-	if (y < 0) { h += y; y = 0; }
-	if (x + w > gw) w = gw - x;
-	if (y + h > gh) h = gh - y;
-
-	if (w > 0 && h > 0)
-	{
-		for (int row = y; row < y + h; row++)
-			memcpy(mc->fb + ((size_t)row * gw + x) * 4,
-			       gdi->primary_buffer + (size_t)row * gdi->stride + (size_t)x * 4, (size_t)w * 4);
-
-		if (!mc->fb_has_dirty)
-		{
-			mc->dirty_x1 = x;
-			mc->dirty_y1 = y;
-			mc->dirty_x2 = x + w;
-			mc->dirty_y2 = y + h;
-			mc->fb_has_dirty = true;
-		}
-		else
-		{
-			if (x < mc->dirty_x1) mc->dirty_x1 = x;
-			if (y < mc->dirty_y1) mc->dirty_y1 = y;
-			if (x + w > mc->dirty_x2) mc->dirty_x2 = x + w;
-			if (y + h > mc->dirty_y2) mc->dirty_y2 = y + h;
-		}
-	}
-	pthread_mutex_unlock(&mc->fb_lock);
-
-	if (!atomic_exchange(&mc->paint_pending, true))
-		rdpmcp_push_event(RDPMCP_EVENT_PAINT);
+	(void)user;
+	push(EV_FRAME, 0, NULL, NULL);
 }
 
-static BOOL mcp_begin_paint(rdpContext* context)
+static void cb_state(void* user, rdpmcp_state state, const char* message)
 {
-	HGDI_WND hwnd = context->gdi->primary->hdc->hwnd;
-	hwnd->invalid->null = TRUE;
-	hwnd->ninvalid = 0;
-	return TRUE;
+	(void)user;
+	push(EV_STATE, (Sint32)state, message ? strdup(message) : NULL, NULL);
 }
 
-static BOOL mcp_end_paint(rdpContext* context)
+static void cb_ai(void* user, int x, int y)
 {
-	mcpContext* mc = (mcpContext*)context;
-	HGDI_WND hwnd = context->gdi->primary->hdc->hwnd;
-
-	if (hwnd->invalid->null)
-		return TRUE;
-
-	fb_update(mc, hwnd->invalid->x, hwnd->invalid->y, hwnd->invalid->w, hwnd->invalid->h);
-	hwnd->invalid->null = TRUE;
-	hwnd->ninvalid = 0;
-	return TRUE;
+	(void)user;
+	push(EV_AI, 0, (void*)(intptr_t)x, (void*)(intptr_t)y);
 }
 
-static BOOL mcp_desktop_resize(rdpContext* context)
+static void cb_clipboard(void* user, const char* text)
 {
-	mcpContext* mc = (mcpContext*)context;
-	rdpSettings* settings = context->settings;
-
-	if (!gdi_resize(context->gdi, freerdp_settings_get_uint32(settings, FreeRDP_DesktopWidth),
-	                freerdp_settings_get_uint32(settings, FreeRDP_DesktopHeight)))
-		return FALSE;
-
-	fb_update(mc, 0, 0, (int)context->gdi->width, (int)context->gdi->height);
-	rdpmcp_push_event(RDPMCP_EVENT_RESIZE);
-	return TRUE;
+	(void)user;
+	push(EV_CLIPBOARD, 0, strdup(text), NULL);
 }
 
-/* ---------- FreeRDP-callbacks ---------- */
+/* ---------- invoer en tekenen (main-thread) ---------- */
 
-/* Klembord zelf afhandelen; de standaardhandlers van FreeRDP koppelen de rest,
- * o.a. de grafische pipeline (/gfx) aan GDI */
-static void mcp_channel_connected(void* context, const ChannelConnectedEventArgs* e)
-{
-	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
-		rdpmcp_clip_connected((mcpContext*)context, (CliprdrClientContext*)e->pInterface);
-	else
-		freerdp_client_OnChannelConnectedEventHandler(context, e);
-}
-
-static void mcp_channel_disconnected(void* context, const ChannelDisconnectedEventArgs* e)
-{
-	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
-		rdpmcp_clip_disconnected((mcpContext*)context);
-	else
-		freerdp_client_OnChannelDisconnectedEventHandler(context, e);
-}
-
-static BOOL mcp_pre_connect(freerdp* instance)
-{
-	rdpContext* context = instance->context;
-	rdpSettings* settings = context->settings;
-
-	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMajorType, OSMAJORTYPE_MACINTOSH))
-		return FALSE;
-	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMinorType, OSMINORTYPE_MACINTOSH))
-		return FALSE;
-	/* Unicode-invoer aanvragen; FreeRDP zet dit na de capability-uitwisseling terug op wat
-	 * de server ondersteunt. Zonder dit staat het altijd uit en kan type_text geen é of € typen. */
-	if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, TRUE))
-		return FALSE;
-
-	mcpContext* mc = (mcpContext*)context;
-	if (!mc->clipboard_enabled &&
-	    !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, FALSE))
-		return FALSE;
-	mc->clipboard_enabled = freerdp_settings_get_bool(settings, FreeRDP_RedirectClipboard);
-
-	PubSub_SubscribeChannelConnected(context->pubSub, mcp_channel_connected);
-	PubSub_SubscribeChannelDisconnected(context->pubSub, mcp_channel_disconnected);
-	return TRUE;
-}
-
-static BOOL mcp_post_connect(freerdp* instance)
-{
-	rdpContext* context = instance->context;
-	mcpContext* mc = (mcpContext*)context;
-
-	if (!gdi_init(instance, PIXEL_FORMAT_BGRX32))
-		return FALSE;
-
-	context->update->BeginPaint = mcp_begin_paint;
-	context->update->EndPaint = mcp_end_paint;
-	context->update->DesktopResize = mcp_desktop_resize;
-
-	const char* host = freerdp_settings_get_string(context->settings, FreeRDP_ServerHostname);
-	snprintf(mc->host, sizeof(mc->host), "%s", host ? host : "?");
-
-	fb_update(mc, 0, 0, (int)context->gdi->width, (int)context->gdi->height);
-	atomic_store(&mc->connected, true);
-	return TRUE;
-}
-
-static void mcp_post_disconnect(freerdp* instance)
-{
-	mcpContext* mc = (mcpContext*)instance->context;
-	atomic_store(&mc->connected, false);
-	gdi_free(instance);
-}
-
-static BOOL mcp_client_new(freerdp* instance, rdpContext* context)
-{
-	mcpContext* mc = (mcpContext*)context;
-
-	instance->PreConnect = mcp_pre_connect;
-	instance->PostConnect = mcp_post_connect;
-	instance->PostDisconnect = mcp_post_disconnect;
-	/* Wachtwoord en certificaat worden in de terminal gevraagd, nooit via MCP */
-	instance->AuthenticateEx = client_cli_authenticate_ex;
-	instance->VerifyCertificateEx = client_cli_verify_certificate_ex;
-	instance->VerifyChangedCertificateEx = client_cli_verify_changed_certificate_ex;
-	instance->PresentGatewayMessage = client_cli_present_gateway_message;
-	instance->LogonErrorInfo = client_cli_logon_error_info;
-	instance->ChooseSmartcard = client_cli_choose_smartcard;
-	instance->GetAccessToken = client_cli_get_access_token;
-
-	pthread_mutex_init(&mc->fb_lock, NULL);
-	pthread_mutex_init(&mc->input_lock, NULL);
-	rdpmcp_clip_init(mc);
-	atomic_store(&mc->ai_enabled, true);
-	mc->clipboard_enabled = true;
-	mc->listen_fd = -1;
-	return TRUE;
-}
-
-static void mcp_client_free(freerdp* instance, rdpContext* context)
-{
-	mcpContext* mc = (mcpContext*)context;
-	WINPR_UNUSED(instance);
-
-	free(mc->fb);
-	mc->fb = NULL;
-	pthread_mutex_destroy(&mc->fb_lock);
-	pthread_mutex_destroy(&mc->input_lock);
-	rdpmcp_clip_free(mc);
-}
-
-static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* ep)
-{
-	memset(ep, 0, sizeof(*ep));
-	ep->Version = RDP_CLIENT_INTERFACE_VERSION;
-	ep->Size = sizeof(RDP_CLIENT_ENTRY_POINTS_V1);
-	ep->ContextSize = sizeof(mcpContext);
-	ep->ClientNew = mcp_client_new;
-	ep->ClientFree = mcp_client_free;
-	return 0;
-}
-
-/* ---------- rdp-thread ---------- */
-
-static void* rdp_thread(void* arg)
-{
-	mcpContext* mc = arg;
-	rdpContext* context = &mc->common.context;
-
-	while (!freerdp_shall_disconnect_context(context))
-	{
-		HANDLE handles[MAXIMUM_WAIT_OBJECTS] = { 0 };
-		const DWORD count = freerdp_get_event_handles(context, handles, ARRAYSIZE(handles));
-		if (count == 0)
-			break;
-
-		if (WaitForMultipleObjects(count, handles, FALSE, 100) == WAIT_FAILED)
-			break;
-
-		if (!freerdp_check_event_handles(context))
-		{
-			if (client_auto_reconnect_ex(context->instance, NULL))
-				continue;
-			break;
-		}
-	}
-
-	atomic_store(&mc->connected, false);
-	rdpmcp_push_event(RDPMCP_EVENT_DISCONNECTED);
-	return NULL;
-}
-
-/* ---------- lokale invoer (main-thread) ---------- */
-
-static bool key_down_state[512];
-
-static void send_key(mcpContext* mc, uint32_t code, bool down, bool repeat)
-{
-	if (!atomic_load(&mc->connected))
-		return;
-	pthread_mutex_lock(&mc->input_lock);
-	freerdp_input_send_keyboard_event_ex(mc->common.context.input, down, repeat, code);
-	pthread_mutex_unlock(&mc->input_lock);
-	if (code < 512)
-		key_down_state[code] = down;
-	atomic_store(&mc->user_last_ms, SDL_GetTicks());
-}
-
-/* Bij focusverlies (bv. Cmd+Tab) alle ingedrukte toetsen loslaten, anders blijven ze hangen */
-static void release_all_keys(mcpContext* mc)
-{
-	for (uint32_t code = 0; code < 512; code++)
-		if (key_down_state[code])
-			send_key(mc, code, false, false);
-}
-
-static void sync_lock_keys(mcpContext* mc)
-{
-	if (!atomic_load(&mc->connected))
-		return;
-	const SDL_Keymod mod = SDL_GetModState();
-	UINT16 flags = 0;
-	if (mod & SDL_KMOD_CAPS)
-		flags |= KBD_SYNC_CAPS_LOCK;
-	if (mod & SDL_KMOD_NUM)
-		flags |= KBD_SYNC_NUM_LOCK;
-	if (mod & SDL_KMOD_SCROLL)
-		flags |= KBD_SYNC_SCROLL_LOCK;
-	pthread_mutex_lock(&mc->input_lock);
-	freerdp_input_send_focus_in_event(mc->common.context.input, flags);
-	pthread_mutex_unlock(&mc->input_lock);
-}
-
-static void send_mouse(mcpContext* mc, UINT16 flags, float fx, float fy)
-{
-	if (!atomic_load(&mc->connected) || mc->fb_w <= 0)
-		return;
-	int x = (int)fx;
-	int y = (int)fy;
-	if (x < 0) x = 0;
-	if (y < 0) y = 0;
-	if (x >= mc->fb_w) x = mc->fb_w - 1;
-	if (y >= mc->fb_h) y = mc->fb_h - 1;
-	pthread_mutex_lock(&mc->input_lock);
-	freerdp_input_send_mouse_event(mc->common.context.input, flags, (UINT16)x, (UINT16)y);
-	pthread_mutex_unlock(&mc->input_lock);
-}
-
-static void send_xmouse(mcpContext* mc, UINT16 flags, float fx, float fy)
-{
-	if (!atomic_load(&mc->connected))
-		return;
-	pthread_mutex_lock(&mc->input_lock);
-	freerdp_input_send_extended_mouse_event(mc->common.context.input, flags, (UINT16)fx,
-	                                        (UINT16)fy);
-	pthread_mutex_unlock(&mc->input_lock);
-}
-
-static void update_title(mcpContext* mc)
+static void update_title(app_t* a)
 {
 	char title[512];
-	snprintf(title, sizeof(title), "rdp-mcp — %s — AI-besturing %s (Ctrl+Alt+Shift+A)",
-	         mc->host[0] ? mc->host : "verbinden…",
-	         atomic_load(&mc->ai_enabled) ? "AAN" : "UIT");
-	SDL_SetWindowTitle(mc->window, title);
+	snprintf(title, sizeof(title), "rdp-mcp — %s — AI-besturing %s (Ctrl+Alt+Shift+A)", a->host,
+	         rdpmcp_get_ai_enabled(a->session) ? "AAN" : "UIT");
+	SDL_SetWindowTitle(a->window, title);
 }
 
-static void handle_event(mcpContext* mc, SDL_Event* ev, bool* running)
+static void handle_input(app_t* a, SDL_Event* ev)
 {
-	if (ev->type == SDL_EVENT_QUIT || ev->type == RDPMCP_EVENT_DISCONNECTED)
-	{
-		*running = false;
-		return;
-	}
-	if (ev->type == RDPMCP_EVENT_CLIPBOARD)
-	{
-		rdpmcp_clip_apply_remote(mc);
-		return;
-	}
-
+	rdpmcp_session* s = a->session;
 	switch (ev->type)
 	{
 		case SDL_EVENT_KEY_DOWN:
@@ -377,90 +91,124 @@ static void handle_event(mcpContext* mc, SDL_Event* ev, bool* running)
 			if (down && ev->key.scancode == SDL_SCANCODE_A && (mod & SDL_KMOD_CTRL) &&
 			    (mod & SDL_KMOD_ALT) && (mod & SDL_KMOD_SHIFT))
 			{
-				atomic_store(&mc->ai_enabled, !atomic_load(&mc->ai_enabled));
-				update_title(mc);
-				printf("AI-besturing %s\n", atomic_load(&mc->ai_enabled) ? "aan" : "uit");
+				rdpmcp_set_ai_enabled(s, !rdpmcp_get_ai_enabled(s));
+				update_title(a);
+				printf("AI-besturing %s\n", rdpmcp_get_ai_enabled(s) ? "aan" : "uit");
 				fflush(stdout);
 				return;
 			}
-			const uint32_t code = rdpmcp_sdl_to_rdp_scancode(ev->key.scancode, mc->cmd_as_win);
+			const uint32_t code = rdpmcp_sdl_to_rdp_scancode(ev->key.scancode, a->cmd_as_win);
 			if (code)
-				send_key(mc, code, down, down && ev->key.repeat);
+				rdpmcp_input_key(s, code, down, down && ev->key.repeat);
 			break;
 		}
 
 		case SDL_EVENT_MOUSE_MOTION:
-			SDL_ConvertEventToRenderCoordinates(mc->renderer, ev);
-			send_mouse(mc, PTR_FLAGS_MOVE, ev->motion.x, ev->motion.y);
+			SDL_ConvertEventToRenderCoordinates(a->renderer, ev);
+			rdpmcp_input_move(s, (int)ev->motion.x, (int)ev->motion.y);
 			break;
 
 		case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		case SDL_EVENT_MOUSE_BUTTON_UP:
 		{
-			SDL_ConvertEventToRenderCoordinates(mc->renderer, ev);
+			SDL_ConvertEventToRenderCoordinates(a->renderer, ev);
 			const bool down = ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-			atomic_store(&mc->user_last_ms, SDL_GetTicks());
-			const float x = ev->button.x;
-			const float y = ev->button.y;
+			rdpmcp_button b;
 			switch (ev->button.button)
 			{
-				case SDL_BUTTON_LEFT:
-					send_mouse(mc, PTR_FLAGS_BUTTON1 | (down ? PTR_FLAGS_DOWN : 0), x, y);
-					break;
-				case SDL_BUTTON_RIGHT:
-					send_mouse(mc, PTR_FLAGS_BUTTON2 | (down ? PTR_FLAGS_DOWN : 0), x, y);
-					break;
-				case SDL_BUTTON_MIDDLE:
-					send_mouse(mc, PTR_FLAGS_BUTTON3 | (down ? PTR_FLAGS_DOWN : 0), x, y);
-					break;
-				case SDL_BUTTON_X1:
-					send_xmouse(mc, PTR_XFLAGS_BUTTON1 | (down ? PTR_XFLAGS_DOWN : 0), x, y);
-					break;
-				case SDL_BUTTON_X2:
-					send_xmouse(mc, PTR_XFLAGS_BUTTON2 | (down ? PTR_XFLAGS_DOWN : 0), x, y);
-					break;
-				default:
-					break;
+				case SDL_BUTTON_LEFT: b = RDPMCP_BUTTON_LEFT; break;
+				case SDL_BUTTON_RIGHT: b = RDPMCP_BUTTON_RIGHT; break;
+				case SDL_BUTTON_MIDDLE: b = RDPMCP_BUTTON_MIDDLE; break;
+				case SDL_BUTTON_X1: b = RDPMCP_BUTTON_X1; break;
+				case SDL_BUTTON_X2: b = RDPMCP_BUTTON_X2; break;
+				default: return;
 			}
+			rdpmcp_input_button(s, b, down, (int)ev->button.x, (int)ev->button.y);
 			break;
 		}
 
 		case SDL_EVENT_MOUSE_WHEEL:
 		{
-			SDL_ConvertEventToRenderCoordinates(mc->renderer, ev);
-			const float x = ev->wheel.mouse_x;
-			const float y = ev->wheel.mouse_y;
-			int dy = ev->wheel.integer_y;
-			int dx = ev->wheel.integer_x;
-			for (; dy > 0; dy--)
-				send_mouse(mc, PTR_FLAGS_WHEEL | 0x0078, x, y);
-			for (; dy < 0; dy++)
-				send_mouse(mc, PTR_FLAGS_WHEEL | PTR_FLAGS_WHEEL_NEGATIVE | 0x0088, x, y);
-			for (; dx > 0; dx--)
-				send_mouse(mc, PTR_FLAGS_HWHEEL | 0x0078, x, y);
-			for (; dx < 0; dx++)
-				send_mouse(mc, PTR_FLAGS_HWHEEL | PTR_FLAGS_WHEEL_NEGATIVE | 0x0088, x, y);
+			SDL_ConvertEventToRenderCoordinates(a->renderer, ev);
+			const int x = (int)ev->wheel.mouse_x;
+			const int y = (int)ev->wheel.mouse_y;
+			if (ev->wheel.integer_y)
+				rdpmcp_input_wheel(s, false, ev->wheel.integer_y, x, y);
+			if (ev->wheel.integer_x)
+				rdpmcp_input_wheel(s, true, ev->wheel.integer_x, x, y);
 			break;
 		}
 
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
-			sync_lock_keys(mc);
+		{
+			const SDL_Keymod mod = SDL_GetModState();
+			rdpmcp_input_focus(s, mod & SDL_KMOD_CAPS, mod & SDL_KMOD_NUM, mod & SDL_KMOD_SCROLL);
+			break;
+		}
+
+		case SDL_EVENT_WINDOW_FOCUS_LOST:
+			rdpmcp_input_release_all(s);
 			break;
 
 		case SDL_EVENT_CLIPBOARD_UPDATE:
-			rdpmcp_clip_local_changed(mc);
+		{
+			char* text = SDL_HasClipboardText() ? SDL_GetClipboardText() : NULL;
+			rdpmcp_local_clipboard_changed(s, text);
+			SDL_free(text);
 			break;
-
-		case SDL_EVENT_WINDOW_FOCUS_LOST:
-			release_all_keys(mc);
-			break;
+		}
 
 		default:
 			break;
 	}
 }
 
-/* ---------- tekenen (main-thread) ---------- */
+static void fit_window(app_t* a, int w, int h)
+{
+	SDL_Rect usable;
+	if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &usable) &&
+	    (w > usable.w * 0.9 || h > usable.h * 0.9))
+	{
+		const double f = SDL_min(usable.w * 0.9 / w, usable.h * 0.9 / h);
+		w = (int)(w * f);
+		h = (int)(h * f);
+	}
+	SDL_SetWindowSize(a->window, w, h);
+}
+
+static void upload_frame(app_t* a)
+{
+	int w = 0;
+	int h = 0;
+	rdpmcp_rect dirty;
+	bool resized = false;
+	const uint8_t* fb = rdpmcp_frame_lock(a->session, &w, &h, &dirty, &resized);
+	if (fb && w > 0 && h > 0)
+	{
+		if (!a->texture || w != a->tex_w || h != a->tex_h)
+		{
+			if (a->texture)
+				SDL_DestroyTexture(a->texture);
+			a->texture = SDL_CreateTexture(a->renderer, SDL_PIXELFORMAT_XRGB8888,
+			                               SDL_TEXTUREACCESS_STREAMING, w, h);
+			a->tex_w = w;
+			a->tex_h = h;
+			SDL_SetRenderLogicalPresentation(a->renderer, w, h, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+			dirty = (rdpmcp_rect){ 0, 0, w, h };
+			if (!a->window_sized)
+			{
+				fit_window(a, w, h);
+				a->window_sized = true;
+			}
+		}
+		if (a->texture && dirty.w > 0 && dirty.h > 0)
+		{
+			const SDL_Rect r = { dirty.x, dirty.y, dirty.w, dirty.h };
+			SDL_UpdateTexture(a->texture, &r, fb + ((size_t)r.y * w + r.x) * 4, w * 4);
+		}
+	}
+	rdpmcp_frame_unlock(a->session);
+}
 
 static void fill_border(SDL_Renderer* r, int w, int h, int t)
 {
@@ -474,57 +222,29 @@ static void fill_border(SDL_Renderer* r, int w, int h, int t)
 }
 
 /* Geeft true terug als er een AI-markering getekend werd (dan later opnieuw tekenen) */
-static bool render(mcpContext* mc)
+static bool render(app_t* a)
 {
-	pthread_mutex_lock(&mc->fb_lock);
-	atomic_store(&mc->paint_pending, false);
-	if (mc->fb && (mc->fb_resized || !mc->texture))
+	SDL_SetRenderDrawColor(a->renderer, 0, 0, 0, 255);
+	SDL_RenderClear(a->renderer);
+	if (!a->texture)
 	{
-		if (mc->texture)
-			SDL_DestroyTexture(mc->texture);
-		mc->texture = SDL_CreateTexture(mc->renderer, SDL_PIXELFORMAT_XRGB8888,
-		                                SDL_TEXTUREACCESS_STREAMING, mc->fb_w, mc->fb_h);
-		SDL_SetRenderLogicalPresentation(mc->renderer, mc->fb_w, mc->fb_h,
-		                                 SDL_LOGICAL_PRESENTATION_LETTERBOX);
-		if (mc->texture)
-			SDL_UpdateTexture(mc->texture, NULL, mc->fb, mc->fb_w * 4);
-		mc->fb_resized = false;
-		mc->fb_has_dirty = false;
+		SDL_RenderPresent(a->renderer);
+		return false;
 	}
-	else if (mc->texture && mc->fb_has_dirty)
+	SDL_RenderTexture(a->renderer, a->texture, NULL, NULL);
+
+	const bool highlight = a->ai_last && SDL_GetTicks() - a->ai_last < AI_HIGHLIGHT_MS;
+	if (highlight)
 	{
-		const SDL_Rect r = { mc->dirty_x1, mc->dirty_y1, mc->dirty_x2 - mc->dirty_x1,
-			                 mc->dirty_y2 - mc->dirty_y1 };
-		SDL_UpdateTexture(mc->texture, &r,
-		                  mc->fb + ((size_t)r.y * mc->fb_w + r.x) * 4, mc->fb_w * 4);
-		mc->fb_has_dirty = false;
-	}
-	const int w = mc->fb_w;
-	const int h = mc->fb_h;
-	pthread_mutex_unlock(&mc->fb_lock);
-
-	SDL_SetRenderDrawColor(mc->renderer, 0, 0, 0, 255);
-	SDL_RenderClear(mc->renderer);
-	if (mc->texture)
-		SDL_RenderTexture(mc->renderer, mc->texture, NULL, NULL);
-
-	bool highlight = false;
-	const uint64_t last = atomic_load(&mc->ai_last_ms);
-	if (mc->texture && last && SDL_GetTicks() - last < AI_HIGHLIGHT_MS)
-	{
-		highlight = true;
-		const int t = w > 1600 ? 6 : 4;
-		SDL_SetRenderDrawColor(mc->renderer, 255, 140, 0, 255);
-		fill_border(mc->renderer, w, h, t);
-
+		SDL_SetRenderDrawColor(a->renderer, 255, 140, 0, 255);
+		fill_border(a->renderer, a->tex_w, a->tex_h, a->tex_w > 1600 ? 6 : 4);
 		/* kruisje op de laatste AI-muispositie */
-		const float ax = (float)atomic_load(&mc->ai_x);
-		const float ay = (float)atomic_load(&mc->ai_y);
+		const float ax = (float)a->ai_x;
+		const float ay = (float)a->ai_y;
 		const SDL_FRect cross[2] = { { ax - 12, ay - 2, 24, 4 }, { ax - 2, ay - 12, 4, 24 } };
-		SDL_RenderFillRects(mc->renderer, cross, 2);
+		SDL_RenderFillRects(a->renderer, cross, 2);
 	}
-
-	SDL_RenderPresent(mc->renderer);
+	SDL_RenderPresent(a->renderer);
 	return highlight;
 }
 
@@ -542,9 +262,8 @@ static void usage_extra(void)
 
 int main(int argc, char* argv[])
 {
-	int rc = 1;
+	app_t a = { 0 };
 	bool ai_off = false;
-	bool cmd_as_win = false;
 	bool no_clipboard = false;
 
 	/* eigen opties eruit filteren, de rest gaat naar de FreeRDP-parser */
@@ -555,95 +274,74 @@ int main(int argc, char* argv[])
 		if (strcmp(argv[i], "--ai-off") == 0)
 			ai_off = true;
 		else if (strcmp(argv[i], "--cmd-as-win") == 0)
-			cmd_as_win = true;
+			a.cmd_as_win = true;
 		else if (strcmp(argv[i], "--no-clipboard") == 0)
 			no_clipboard = true;
 		else
 			args[nargs++] = argv[i];
 	}
 
-	RDP_CLIENT_ENTRY_POINTS ep;
-	RdpClientEntry(&ep);
-	rdpContext* context = freerdp_client_context_new(&ep);
-	if (!context)
-		goto out_args;
-	mcpContext* mc = (mcpContext*)context;
-	mc->cmd_as_win = cmd_as_win;
-	mc->clipboard_enabled = !no_clipboard;
-	if (ai_off)
-		atomic_store(&mc->ai_enabled, false);
+	const rdpmcp_callbacks cb = {
+		.user = &a,
+		.frame = cb_frame,
+		.state = cb_state,
+		.ai_activity = cb_ai,
+		.remote_clipboard = cb_clipboard,
+		/* certificaat en wachtwoord: in de terminal */
+	};
 
-	const int status =
-	    freerdp_client_settings_parse_command_line(context->settings, nargs, args, FALSE);
-	if (status)
+	int rc = 1;
+	a.session = rdpmcp_session_new_from_args(nargs, args, !no_clipboard, !ai_off, &cb, &rc);
+	if (!a.session)
 	{
-		rc = freerdp_client_settings_command_line_status_print(context->settings, status, nargs,
-		                                                       args);
-		if (status == COMMAND_LINE_STATUS_PRINT_HELP)
+		if (rc == -1)
+		{
 			usage_extra();
-		goto out_context;
+			rc = 0;
+		}
+		free(args);
+		return rc;
 	}
+	for (int i = 1; i < nargs; i++)
+		if (strncmp(args[i], "/v:", 3) == 0)
+			a.host = args[i] + 3;
+	if (!a.host)
+		a.host = "?";
 
 	if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_EVENTS))
 	{
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
-		goto out_context;
+		goto out;
 	}
-	const Uint32 base = SDL_RegisterEvents(5);
-	RDPMCP_EVENT_PAINT = base;
-	RDPMCP_EVENT_RESIZE = base + 1;
-	RDPMCP_EVENT_DISCONNECTED = base + 2;
-	RDPMCP_EVENT_AI = base + 3;
-	RDPMCP_EVENT_CLIPBOARD = base + 4;
+	const Uint32 base = SDL_RegisterEvents(4);
+	EV_FRAME = base;
+	EV_STATE = base + 1;
+	EV_AI = base + 2;
+	EV_CLIPBOARD = base + 3;
 
-	/* Verbinden vóór het venster opent, zodat wachtwoordvragen in de terminal rustig kunnen */
-	if (!freerdp_connect(context->instance))
+	a.window = SDL_CreateWindow("rdp-mcp", 1024, 768,
+	                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+	a.renderer = a.window ? SDL_CreateRenderer(a.window, NULL) : NULL;
+	if (!a.renderer)
 	{
-		fprintf(stderr, "Verbinden mislukt: %s\n",
-		        freerdp_get_last_error_string(freerdp_get_last_error(context)));
+		fprintf(stderr, "SDL: %s\n", SDL_GetError());
 		goto out_sdl;
 	}
+	SDL_SetRenderVSync(a.renderer, 1);
+	update_title(&a);
 
-	int win_w = mc->fb_w > 0 ? mc->fb_w : 1024;
-	int win_h = mc->fb_h > 0 ? mc->fb_h : 768;
-	const SDL_Rect* usable = NULL;
-	SDL_Rect bounds;
-	if (SDL_GetDisplayUsableBounds(SDL_GetPrimaryDisplay(), &bounds))
-		usable = &bounds;
-	if (usable && (win_w > usable->w * 0.9 || win_h > usable->h * 0.9))
+	if (!rdpmcp_session_start(a.session))
+		goto out_sdl;
 	{
-		const double s = SDL_min(usable->w * 0.9 / win_w, usable->h * 0.9 / win_h);
-		win_w = (int)(win_w * s);
-		win_h = (int)(win_h * s);
+		char* text = SDL_HasClipboardText() ? SDL_GetClipboardText() : NULL;
+		rdpmcp_local_clipboard_changed(a.session, text); /* huidige inhoud aanbieden */
+		SDL_free(text);
 	}
-
-	mc->window = SDL_CreateWindow("rdp-mcp", win_w, win_h,
-	                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
-	if (!mc->window)
-	{
-		fprintf(stderr, "SDL_CreateWindow: %s\n", SDL_GetError());
-		goto out_disconnect;
-	}
-	mc->renderer = SDL_CreateRenderer(mc->window, NULL);
-	if (!mc->renderer)
-	{
-		fprintf(stderr, "SDL_CreateRenderer: %s\n", SDL_GetError());
-		goto out_disconnect;
-	}
-	SDL_SetRenderVSync(mc->renderer, 1);
-	update_title(mc);
-	rdpmcp_clip_local_changed(mc); /* huidige Mac-inhoud aanbieden */
-
-	if (!rdpmcp_control_start(mc))
-		fprintf(stderr, "Waarschuwing: control-socket niet gestart, MCP werkt niet\n");
-	else
-		printf("MCP-control-socket: %s\n", mc->sock_path);
+	if (rdpmcp_session_socket_path(a.session))
+		printf("MCP-control-socket: %s\n", rdpmcp_session_socket_path(a.session));
 	fflush(stdout);
 
-	pthread_t rdp;
-	if (pthread_create(&rdp, NULL, rdp_thread, mc) != 0)
-		goto out_control;
-
+	rc = 0;
 	bool running = true;
 	bool needs_render = true;
 	bool highlight = false;
@@ -654,40 +352,72 @@ int main(int argc, char* argv[])
 		{
 			do
 			{
-				if (ev.type == RDPMCP_EVENT_PAINT || ev.type == RDPMCP_EVENT_RESIZE ||
-				    ev.type == RDPMCP_EVENT_AI || ev.type == SDL_EVENT_WINDOW_EXPOSED ||
-				    ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+				if (ev.type == SDL_EVENT_QUIT)
+					running = false;
+				else if (ev.type == EV_FRAME)
+				{
+					upload_frame(&a);
+					needs_render = true;
+				}
+				else if (ev.type == EV_STATE)
+				{
+					char* msg = ev.user.data1;
+					if (ev.user.code == RDPMCP_STATE_FAILED)
+					{
+						fprintf(stderr, "Verbinding mislukt of verbroken: %s\n", msg ? msg : "?");
+						rc = 1;
+						running = false;
+					}
+					else if (ev.user.code == RDPMCP_STATE_DISCONNECTED)
+					{
+						if (msg)
+							printf("Verbinding gesloten: %s\n", msg);
+						running = false;
+					}
+					free(msg);
+				}
+				else if (ev.type == EV_AI)
+				{
+					a.ai_last = SDL_GetTicks();
+					if ((intptr_t)ev.user.data1 >= 0)
+					{
+						a.ai_x = (int)(intptr_t)ev.user.data1;
+						a.ai_y = (int)(intptr_t)ev.user.data2;
+					}
+					needs_render = true;
+				}
+				else if (ev.type == EV_CLIPBOARD)
+				{
+					SDL_SetClipboardText(ev.user.data1);
+					free(ev.user.data1);
+				}
+				else if (ev.type == SDL_EVENT_WINDOW_EXPOSED ||
+				         ev.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
 					needs_render = true;
 				else
-					handle_event(mc, &ev, &running);
+					handle_input(&a, &ev);
 			} while (running && SDL_PollEvent(&ev));
 		}
 		if (running && (needs_render || highlight))
 		{
-			highlight = render(mc);
+			highlight = render(&a);
 			needs_render = false;
 		}
 	}
 
-	freerdp_abort_connect_context(context);
-	pthread_join(rdp, NULL);
-	rc = 0;
-
-out_control:
-	rdpmcp_control_stop(mc);
-out_disconnect:
-	freerdp_disconnect(context->instance);
-	if (mc->texture)
-		SDL_DestroyTexture(mc->texture);
-	if (mc->renderer)
-		SDL_DestroyRenderer(mc->renderer);
-	if (mc->window)
-		SDL_DestroyWindow(mc->window);
 out_sdl:
+	rdpmcp_session_free(a.session);
+	a.session = NULL;
+	if (a.texture)
+		SDL_DestroyTexture(a.texture);
+	if (a.renderer)
+		SDL_DestroyRenderer(a.renderer);
+	if (a.window)
+		SDL_DestroyWindow(a.window);
 	SDL_Quit();
-out_context:
-	freerdp_client_context_free(context);
-out_args:
+out:
+	if (a.session)
+		rdpmcp_session_free(a.session);
 	free(args);
 	return rc;
 }

@@ -1,6 +1,6 @@
 # Control-socketprotocol
 
-De client luistert op `~/.rdp-mcp/<pid>.sock` (Unix stream socket, of `$RDP_MCP_DIR`).
+Elke sessie luistert op `~/.rdp-mcp/<pid>-<n>.sock` (Unix stream socket, of `$RDP_MCP_DIR`).
 Elke verbinding mag meerdere commando's sturen. Eén commando staat op één regel
 (`\n`), en elk antwoord begint met `OK` of `ERR <code> <uitleg>`.
 
@@ -9,7 +9,7 @@ begrensd tot de rand.
 
 | commando | antwoord | opmerking |
 |---|---|---|
-| `INFO` | `OK <b> <h> <ai 0\|1> <unicode 0\|1> <host>` | altijd toegestaan |
+| `INFO` | `OK <b> <h> <ai 0\|1> <unicode 0\|1> <host> <naam>` | altijd toegestaan; naam mag spaties bevatten; b = h = 0 tijdens verbinden |
 | `SCREENSHOT` | `OK <b> <h> <n>` + `n` bytes | ruwe pixels, BGRX (4 bytes/pixel), stride = b×4; altijd toegestaan |
 | `MOVE <x> <y>` | `OK` | |
 | `BUTTON <left\|right\|middle> <down\|up> <x> <y>` | `OK` | |
@@ -37,9 +37,9 @@ geweigerd wordt.
 Voorbeeld:
 
 ```
-$ nc -U ~/.rdp-mcp/12345.sock
+$ nc -U ~/.rdp-mcp/12345-1.sock
 INFO
-OK 1920 1080 1 1 server.voorbeeld.be
+OK 1920 1080 1 1 server.voorbeeld.be Lokaal 2.14
 MOVE 100 200
 OK
 ```

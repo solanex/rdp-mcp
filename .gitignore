@@ -3,3 +3,6 @@ mcp/.venv/
 __pycache__/
 *.pyc
 .DS_Store
+.build/
+mac/build/
+.swiftpm/

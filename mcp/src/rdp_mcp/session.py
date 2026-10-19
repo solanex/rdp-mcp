@@ -1,7 +1,7 @@
 """Praat met een lopende rdp-mcp-client via diens Unix-socket.
 
 Protocol (tekst, één commando per regel, zie ook ../../PROTOCOL.md):
-  INFO                          -> OK <breedte> <hoogte> <ai 0|1> <unicode 0|1> <host>
+  INFO                          -> OK <breedte> <hoogte> <ai 0|1> <unicode 0|1> <host> <naam>
   SCREENSHOT                    -> OK <breedte> <hoogte> <bytes>\\n<ruwe BGRX-pixels>
   MOVE <x> <y>                  -> OK
   BUTTON <left|right|middle> <down|up> <x> <y>
@@ -42,6 +42,7 @@ class SessionInfo:
     ai_enabled: bool
     unicode: bool
     host: str
+    name: str
 
 
 class Connection:
@@ -69,8 +70,10 @@ class Connection:
         return self._send(line).decode()
 
     def info(self, session_id: str) -> SessionInfo:
-        w, h, ai, uni, host = self.cmd("INFO").split(" ", 4)
-        return SessionInfo(session_id, int(w), int(h), ai == "1", uni == "1", host)
+        parts = self.cmd("INFO").split(" ", 5)
+        w, h, ai, uni, host = parts[:5]
+        name = parts[5] if len(parts) > 5 else host  # oudere clients sturen geen naam
+        return SessionInfo(session_id, int(w), int(h), ai == "1", uni == "1", host, name)
 
     def screenshot(self) -> tuple[int, int, bytes]:
         w, h, n = (int(v) for v in self._send("SCREENSHOT").split())

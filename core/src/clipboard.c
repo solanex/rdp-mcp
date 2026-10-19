@@ -7,7 +7,7 @@
  * - AI: kan het remote klembord lezen en zelf tekst aanbieden (CLIPGET/CLIPSET).
  *
  * Privacy: de AI krijgt het Mac-klembord nooit te zien. CLIPGET weigert zolang
- * de Mac-inhoud actief is, en als de laatste invoer van de AI kwam (bv. een
+ * de lokale inhoud actief is, en als de laatste invoer van de AI kwam (bv. een
  * AI-ctrl+v), geven we de Mac-inhoud ook niet aan de server. */
 
 #include <stdio.h>
@@ -19,7 +19,7 @@
 #include <winpr/string.h>
 #include <winpr/user.h>
 
-#include "rdpmcp.h"
+#include "internal.h"
 
 static char* dup_or_null(const char* s)
 {
@@ -58,9 +58,9 @@ static char* lf_to_crlf(const char* s)
 	return out;
 }
 
-static UINT send_format_list(mcpContext* mc, bool has_text)
+static UINT send_format_list(rdpmcp_session* s, bool has_text)
 {
-	CliprdrClientContext* cliprdr = mc->cliprdr;
+	CliprdrClientContext* cliprdr = s->cliprdr;
 	if (!cliprdr)
 		return CHANNEL_RC_OK;
 
@@ -76,7 +76,7 @@ static UINT send_format_list(mcpContext* mc, bool has_text)
 
 static UINT cb_monitor_ready(CliprdrClientContext* cliprdr, const CLIPRDR_MONITOR_READY* ready)
 {
-	mcpContext* mc = cliprdr->custom;
+	rdpmcp_session* s = cliprdr->custom;
 	WINPR_UNUSED(ready);
 
 	CLIPRDR_GENERAL_CAPABILITY_SET general = { 0 };
@@ -93,11 +93,11 @@ static UINT cb_monitor_ready(CliprdrClientContext* cliprdr, const CLIPRDR_MONITO
 	if (rc != CHANNEL_RC_OK)
 		return rc;
 
-	pthread_mutex_lock(&mc->clip_lock);
-	const bool has_text = (mc->clip_owner == CLIP_OWNER_LOCAL && mc->clip_local_text) ||
-	                      (mc->clip_owner == CLIP_OWNER_AI && mc->clip_ai_text);
-	pthread_mutex_unlock(&mc->clip_lock);
-	return send_format_list(mc, has_text);
+	pthread_mutex_lock(&s->clip_lock);
+	const bool has_text = (s->clip_owner == CLIP_OWNER_LOCAL && s->clip_local_text) ||
+	                      (s->clip_owner == CLIP_OWNER_AI && s->clip_ai_text);
+	pthread_mutex_unlock(&s->clip_lock);
+	return send_format_list(s, has_text);
 }
 
 static UINT cb_server_capabilities(CliprdrClientContext* cliprdr,
@@ -110,7 +110,7 @@ static UINT cb_server_capabilities(CliprdrClientContext* cliprdr,
 
 static UINT cb_server_format_list(CliprdrClientContext* cliprdr, const CLIPRDR_FORMAT_LIST* list)
 {
-	mcpContext* mc = cliprdr->custom;
+	rdpmcp_session* s = cliprdr->custom;
 
 	CLIPRDR_FORMAT_LIST_RESPONSE response = { 0 };
 	response.common.msgType = CB_FORMAT_LIST_RESPONSE;
@@ -124,13 +124,13 @@ static UINT cb_server_format_list(CliprdrClientContext* cliprdr, const CLIPRDR_F
 		if (list->formats[i].formatId == CF_UNICODETEXT)
 			has_text = true;
 
-	pthread_mutex_lock(&mc->clip_lock);
-	mc->clip_owner = CLIP_OWNER_REMOTE;
-	free(mc->clip_remote_text);
-	mc->clip_remote_text = NULL;
-	mc->clip_pending = has_text;
-	pthread_cond_broadcast(&mc->clip_cond);
-	pthread_mutex_unlock(&mc->clip_lock);
+	pthread_mutex_lock(&s->clip_lock);
+	s->clip_owner = CLIP_OWNER_REMOTE;
+	free(s->clip_remote_text);
+	s->clip_remote_text = NULL;
+	s->clip_pending = has_text;
+	pthread_cond_broadcast(&s->clip_cond);
+	pthread_mutex_unlock(&s->clip_lock);
 
 	if (has_text)
 	{
@@ -140,10 +140,10 @@ static UINT cb_server_format_list(CliprdrClientContext* cliprdr, const CLIPRDR_F
 		rc = cliprdr->ClientFormatDataRequest(cliprdr, &request);
 		if (rc != CHANNEL_RC_OK)
 		{
-			pthread_mutex_lock(&mc->clip_lock);
-			mc->clip_pending = false;
-			pthread_cond_broadcast(&mc->clip_cond);
-			pthread_mutex_unlock(&mc->clip_lock);
+			pthread_mutex_lock(&s->clip_lock);
+			s->clip_pending = false;
+			pthread_cond_broadcast(&s->clip_cond);
+			pthread_mutex_unlock(&s->clip_lock);
 		}
 	}
 	return rc;
@@ -160,27 +160,27 @@ static UINT cb_server_format_list_response(CliprdrClientContext* cliprdr,
 static UINT cb_server_format_data_request(CliprdrClientContext* cliprdr,
                                           const CLIPRDR_FORMAT_DATA_REQUEST* request)
 {
-	mcpContext* mc = cliprdr->custom;
+	rdpmcp_session* s = cliprdr->custom;
 	WCHAR* wtext = NULL;
 	size_t wlen = 0;
 	bool blocked = false;
 
 	if (request->requestedFormatId == CF_UNICODETEXT)
 	{
-		pthread_mutex_lock(&mc->clip_lock);
+		pthread_mutex_lock(&s->clip_lock);
 		const char* src = NULL;
-		if (mc->clip_owner == CLIP_OWNER_AI)
-			src = mc->clip_ai_text;
-		else if (mc->clip_owner == CLIP_OWNER_LOCAL)
+		if (s->clip_owner == CLIP_OWNER_AI)
+			src = s->clip_ai_text;
+		else if (s->clip_owner == CLIP_OWNER_LOCAL)
 		{
 			/* Kwam de laatste invoer van de AI, dan is dit vermoedelijk een AI-plakactie */
-			if (atomic_load(&mc->ai_last_ms) > atomic_load(&mc->user_last_ms))
+			if (atomic_load(&s->ai_last_ms) > atomic_load(&s->user_last_ms))
 				blocked = true;
 			else
-				src = mc->clip_local_text;
+				src = s->clip_local_text;
 		}
 		char* crlf = src ? lf_to_crlf(src) : NULL;
-		pthread_mutex_unlock(&mc->clip_lock);
+		pthread_mutex_unlock(&s->clip_lock);
 
 		if (crlf)
 		{
@@ -191,8 +191,14 @@ static UINT cb_server_format_data_request(CliprdrClientContext* cliprdr,
 
 	if (blocked)
 	{
-		printf("Mac-klembord niet gedeeld: de plakopdracht kwam van de AI\n");
-		fflush(stdout);
+		static const char* msg = "Mac-klembord niet gedeeld: de plakopdracht kwam van de AI";
+		if (s->cb.notice)
+			s->cb.notice(s->cb.user, msg);
+		else
+		{
+			printf("%s\n", msg);
+			fflush(stdout);
+		}
 	}
 
 	CLIPRDR_FORMAT_DATA_RESPONSE response = { 0 };
@@ -214,7 +220,7 @@ static UINT cb_server_format_data_request(CliprdrClientContext* cliprdr,
 static UINT cb_server_format_data_response(CliprdrClientContext* cliprdr,
                                            const CLIPRDR_FORMAT_DATA_RESPONSE* response)
 {
-	mcpContext* mc = cliprdr->custom;
+	rdpmcp_session* s = cliprdr->custom;
 	char* text = NULL;
 
 	if ((response->common.msgFlags & CB_RESPONSE_OK) && response->requestedFormatData &&
@@ -225,47 +231,49 @@ static UINT cb_server_format_data_response(CliprdrClientContext* cliprdr,
 		crlf_to_lf(text);
 	}
 
-	bool stored = false;
-	pthread_mutex_lock(&mc->clip_lock);
-	if (mc->clip_owner == CLIP_OWNER_REMOTE)
+	char* for_local = NULL;
+	pthread_mutex_lock(&s->clip_lock);
+	if (s->clip_owner == CLIP_OWNER_REMOTE)
 	{
-		free(mc->clip_remote_text);
-		mc->clip_remote_text = text;
+		free(s->clip_remote_text);
+		s->clip_remote_text = text;
 		text = NULL;
-		stored = mc->clip_remote_text != NULL;
+		for_local = dup_or_null(s->clip_remote_text);
 	}
-	mc->clip_pending = false;
-	pthread_cond_broadcast(&mc->clip_cond);
-	pthread_mutex_unlock(&mc->clip_lock);
+	s->clip_pending = false;
+	pthread_cond_broadcast(&s->clip_cond);
+	pthread_mutex_unlock(&s->clip_lock);
 	free(text);
 
-	if (stored)
-		rdpmcp_push_event(RDPMCP_EVENT_CLIPBOARD);
+	/* de frontend zet dit op het lokale klembord */
+	if (for_local && s->cb.remote_clipboard)
+		s->cb.remote_clipboard(s->cb.user, for_local);
+	free(for_local);
 	return CHANNEL_RC_OK;
 }
 
 /* ---------- levenscyclus ---------- */
 
-void rdpmcp_clip_init(mcpContext* mc)
+void rdpmcp_clip_init(rdpmcp_session* s)
 {
-	pthread_mutex_init(&mc->clip_lock, NULL);
-	pthread_cond_init(&mc->clip_cond, NULL);
-	mc->clip_owner = CLIP_OWNER_NONE;
+	pthread_mutex_init(&s->clip_lock, NULL);
+	pthread_cond_init(&s->clip_cond, NULL);
+	s->clip_owner = CLIP_OWNER_NONE;
 }
 
-void rdpmcp_clip_free(mcpContext* mc)
+void rdpmcp_clip_free(rdpmcp_session* s)
 {
-	free(mc->clip_local_text);
-	free(mc->clip_remote_text);
-	free(mc->clip_ai_text);
-	mc->clip_local_text = mc->clip_remote_text = mc->clip_ai_text = NULL;
-	pthread_cond_destroy(&mc->clip_cond);
-	pthread_mutex_destroy(&mc->clip_lock);
+	free(s->clip_local_text);
+	free(s->clip_remote_text);
+	free(s->clip_ai_text);
+	s->clip_local_text = s->clip_remote_text = s->clip_ai_text = NULL;
+	pthread_cond_destroy(&s->clip_cond);
+	pthread_mutex_destroy(&s->clip_lock);
 }
 
-void rdpmcp_clip_connected(mcpContext* mc, CliprdrClientContext* cliprdr)
+void rdpmcp_clip_connected(rdpmcp_session* s, CliprdrClientContext* cliprdr)
 {
-	cliprdr->custom = mc;
+	cliprdr->custom = s;
 	cliprdr->MonitorReady = cb_monitor_ready;
 	cliprdr->ServerCapabilities = cb_server_capabilities;
 	cliprdr->ServerFormatList = cb_server_format_list;
@@ -273,67 +281,52 @@ void rdpmcp_clip_connected(mcpContext* mc, CliprdrClientContext* cliprdr)
 	cliprdr->ServerFormatDataRequest = cb_server_format_data_request;
 	cliprdr->ServerFormatDataResponse = cb_server_format_data_response;
 
-	pthread_mutex_lock(&mc->clip_lock);
-	mc->cliprdr = cliprdr;
-	pthread_mutex_unlock(&mc->clip_lock);
+	pthread_mutex_lock(&s->clip_lock);
+	s->cliprdr = cliprdr;
+	pthread_mutex_unlock(&s->clip_lock);
 }
 
-void rdpmcp_clip_disconnected(mcpContext* mc)
+void rdpmcp_clip_disconnected(rdpmcp_session* s)
 {
-	pthread_mutex_lock(&mc->clip_lock);
-	mc->cliprdr = NULL;
-	mc->clip_pending = false;
-	pthread_cond_broadcast(&mc->clip_cond);
-	pthread_mutex_unlock(&mc->clip_lock);
+	pthread_mutex_lock(&s->clip_lock);
+	s->cliprdr = NULL;
+	s->clip_pending = false;
+	pthread_cond_broadcast(&s->clip_cond);
+	pthread_mutex_unlock(&s->clip_lock);
 }
 
-/* ---------- main-thread ---------- */
+/* ---------- frontend ---------- */
 
-void rdpmcp_clip_local_changed(mcpContext* mc)
+void rdpmcp_local_clipboard_changed(rdpmcp_session* s, const char* text)
 {
-	if (!mc->clipboard_enabled)
+	if (!s->clipboard_enabled)
 		return;
 
-	char* text = SDL_HasClipboardText() ? SDL_GetClipboardText() : NULL;
-
-	pthread_mutex_lock(&mc->clip_lock);
-	/* Zelf gezet vanuit de remote sessie: geen nieuwe Mac-inhoud */
-	if (text && mc->clip_remote_text && strcmp(text, mc->clip_remote_text) == 0)
+	pthread_mutex_lock(&s->clip_lock);
+	/* Door ons gezet vanuit de remote sessie: geen nieuwe lokale inhoud */
+	if (text && s->clip_remote_text && strcmp(text, s->clip_remote_text) == 0)
 	{
-		pthread_mutex_unlock(&mc->clip_lock);
-		SDL_free(text);
+		pthread_mutex_unlock(&s->clip_lock);
 		return;
 	}
-	free(mc->clip_local_text);
-	mc->clip_local_text = (text && *text) ? strdup(text) : NULL;
-	crlf_to_lf(mc->clip_local_text);
-	mc->clip_owner = CLIP_OWNER_LOCAL;
-	const bool has_text = mc->clip_local_text != NULL;
-	const bool ready = mc->cliprdr != NULL;
-	pthread_mutex_unlock(&mc->clip_lock);
-	SDL_free(text);
+	free(s->clip_local_text);
+	s->clip_local_text = (text && *text) ? strdup(text) : NULL;
+	crlf_to_lf(s->clip_local_text);
+	s->clip_owner = CLIP_OWNER_LOCAL;
+	const bool has_text = s->clip_local_text != NULL;
+	const bool ready = s->cliprdr != NULL;
+	pthread_mutex_unlock(&s->clip_lock);
 
 	if (ready)
-		send_format_list(mc, has_text);
-}
-
-void rdpmcp_clip_apply_remote(mcpContext* mc)
-{
-	pthread_mutex_lock(&mc->clip_lock);
-	char* text = mc->clip_owner == CLIP_OWNER_REMOTE ? dup_or_null(mc->clip_remote_text) : NULL;
-	pthread_mutex_unlock(&mc->clip_lock);
-
-	if (text)
-		SDL_SetClipboardText(text);
-	free(text);
+		send_format_list(s, has_text);
 }
 
 /* ---------- control-thread ---------- */
 
-int rdpmcp_clip_get(mcpContext* mc, char** text, int timeout_ms)
+int rdpmcp_clip_get(rdpmcp_session* s, char** text, int timeout_ms)
 {
 	*text = NULL;
-	if (!mc->clipboard_enabled)
+	if (!s->clipboard_enabled)
 		return CLIP_DISABLED;
 
 	struct timespec deadline;
@@ -346,27 +339,27 @@ int rdpmcp_clip_get(mcpContext* mc, char** text, int timeout_ms)
 		deadline.tv_nsec -= 1000000000L;
 	}
 
-	pthread_mutex_lock(&mc->clip_lock);
-	while (mc->clip_pending)
-		if (pthread_cond_timedwait(&mc->clip_cond, &mc->clip_lock, &deadline) != 0)
+	pthread_mutex_lock(&s->clip_lock);
+	while (s->clip_pending)
+		if (pthread_cond_timedwait(&s->clip_cond, &s->clip_lock, &deadline) != 0)
 			break;
 
 	int rc = CLIP_OK;
-	if (!mc->cliprdr)
+	if (!s->cliprdr)
 		rc = CLIP_NOT_READY;
-	else if (mc->clip_owner == CLIP_OWNER_LOCAL)
+	else if (s->clip_owner == CLIP_OWNER_LOCAL)
 		rc = CLIP_LOCAL_PRIVATE;
-	else if (mc->clip_owner == CLIP_OWNER_REMOTE)
-		*text = dup_or_null(mc->clip_remote_text);
-	else if (mc->clip_owner == CLIP_OWNER_AI)
-		*text = dup_or_null(mc->clip_ai_text);
-	pthread_mutex_unlock(&mc->clip_lock);
+	else if (s->clip_owner == CLIP_OWNER_REMOTE)
+		*text = dup_or_null(s->clip_remote_text);
+	else if (s->clip_owner == CLIP_OWNER_AI)
+		*text = dup_or_null(s->clip_ai_text);
+	pthread_mutex_unlock(&s->clip_lock);
 	return rc;
 }
 
-int rdpmcp_clip_set_ai(mcpContext* mc, const char* text)
+int rdpmcp_clip_set_ai(rdpmcp_session* s, const char* text)
 {
-	if (!mc->clipboard_enabled)
+	if (!s->clipboard_enabled)
 		return CLIP_DISABLED;
 
 	char* copy = strdup(text);
@@ -374,18 +367,18 @@ int rdpmcp_clip_set_ai(mcpContext* mc, const char* text)
 		return CLIP_NOT_READY;
 	crlf_to_lf(copy);
 
-	pthread_mutex_lock(&mc->clip_lock);
-	if (!mc->cliprdr)
+	pthread_mutex_lock(&s->clip_lock);
+	if (!s->cliprdr)
 	{
-		pthread_mutex_unlock(&mc->clip_lock);
+		pthread_mutex_unlock(&s->clip_lock);
 		free(copy);
 		return CLIP_NOT_READY;
 	}
 	const bool has_text = *copy != '\0';
-	free(mc->clip_ai_text);
-	mc->clip_ai_text = copy;
-	mc->clip_owner = CLIP_OWNER_AI;
-	pthread_mutex_unlock(&mc->clip_lock);
+	free(s->clip_ai_text);
+	s->clip_ai_text = copy;
+	s->clip_owner = CLIP_OWNER_AI;
+	pthread_mutex_unlock(&s->clip_lock);
 
-	return send_format_list(mc, has_text) == CHANNEL_RC_OK ? CLIP_OK : CLIP_NOT_READY;
+	return send_format_list(s, has_text) == CHANNEL_RC_OK ? CLIP_OK : CLIP_NOT_READY;
 }
