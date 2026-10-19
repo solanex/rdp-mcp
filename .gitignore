@@ -1,0 +1,5 @@
+client/build/
+mcp/.venv/
+__pycache__/
+*.pyc
+.DS_Store
