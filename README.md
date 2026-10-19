@@ -43,7 +43,7 @@ Op Linux werkt het ook. Je hebt dan de ontwikkelpakketten van FreeRDP 3 en SDL3 
 1. **Start de client.** Hij gebruikt de gewone FreeRDP-opties:
 
    ```sh
-   rdp-mcp-client /v:server.voorbeeld.be /u:jan /d:INT /kbd:layout:0x80C
+   rdp-mcp-client /v:server.voorbeeld.be /u:jan /d:VOORBEELD /kbd:layout:0x80C
    ```
 
    Je krijgt de wachtwoordvraag in de terminal. Na het verbinden opent het venster
@@ -117,6 +117,7 @@ naar de echte resolutie.
 | `RDP_MCP_LAYOUT` | `be` | indeling van de remote sessie voor letters in sneltoetsen (`be` = azerty, `us` = qwerty) |
 | `RDP_MCP_MAX_EDGE` | `1280` | langste zijde van screenshots in pixels |
 | `RDP_MCP_IMAGE_FORMAT` | `png` | `png` of `jpeg` (kleiner, minder scherp) |
+| `RDP_MCP_SETTLE` | `0.4` | seconden die een screenshot minstens wacht na de laatste actie |
 | `RDP_MCP_DIR` | `~/.rdp-mcp` | map met de sockets (ook voor de client) |
 
 ## Beveiliging

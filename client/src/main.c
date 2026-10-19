@@ -138,6 +138,10 @@ static BOOL mcp_pre_connect(freerdp* instance)
 		return FALSE;
 	if (!freerdp_settings_set_uint32(settings, FreeRDP_OsMinorType, OSMINORTYPE_MACINTOSH))
 		return FALSE;
+	/* Unicode-invoer aanvragen; FreeRDP zet dit na de capability-uitwisseling terug op wat
+	 * de server ondersteunt. Zonder dit staat het altijd uit en kan type_text geen é of € typen. */
+	if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, TRUE))
+		return FALSE;
 
 	/* Standaardhandlers van FreeRDP koppelen o.a. de grafische pipeline (/gfx) aan GDI */
 	PubSub_SubscribeChannelConnected(context->pubSub, freerdp_client_OnChannelConnectedEventHandler);

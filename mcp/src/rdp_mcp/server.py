@@ -25,6 +25,11 @@ IMAGE_FORMAT = os.environ.get("RDP_MCP_IMAGE_FORMAT", "png").lower()
 
 BUTTONS = ("left", "right", "middle")
 
+# Het remote scherm loopt even achter op de invoer; een screenshot vlak na een
+# actie wacht daarom tot er minstens zoveel tijd verstreken is.
+SETTLE_SECONDS = float(os.environ.get("RDP_MCP_SETTLE", "0.4"))
+_last_input = 0.0
+
 mcp = MCPServer(
     "rdp-mcp",
     instructions=(
@@ -66,8 +71,10 @@ def _to_remote(info: SessionInfo, x: float, y: float) -> tuple[int, int]:
 
 
 def _run(conn: Connection, line: str) -> None:
+    global _last_input
     try:
         conn.cmd(line)
+        _last_input = time.monotonic()
     except ClientError as e:
         if e.code == "ai-disabled":
             raise ToolError(
@@ -119,6 +126,9 @@ def screenshot(session: str | None = None) -> list:
     Coördinaten voor de andere tools zijn pixels in deze afbeelding.
     """
     s, info = _pick(session)
+    pending = SETTLE_SECONDS - (time.monotonic() - _last_input)
+    if pending > 0:
+        time.sleep(pending)
     with s.connect() as conn:
         w, h, data = conn.screenshot()
     img = PILImage.frombuffer("RGB", (w, h), data, "raw", "BGRX", w * 4, 1)
