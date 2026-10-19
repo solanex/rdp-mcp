@@ -27,15 +27,25 @@ struct HostEditor: View {
                     TextField("RD Gateway", text: $entry.gateway, prompt: Text("optioneel"))
                 }
 
-                Section("Aanmelden") {
+                Section {
                     TextField("Gebruikersnaam", text: $entry.username)
                     TextField("Domein", text: $entry.domain, prompt: Text("bv. VOORBEELD"))
-                    SecureField("Wachtwoord", text: $password,
-                                prompt: Text(entry.hasSavedPassword ? "•••••••• (bewaard — leeg laten om te behouden)"
-                                                                    : "leeg = vragen bij verbinden"))
                     Toggle("Wachtwoord bewaren in de sleutelhanger", isOn: $savePassword)
-                    Toggle("Touch ID vragen voor het bewaarde wachtwoord", isOn: $entry.requireTouchID)
-                        .disabled(!savePassword)
+                        .onChange(of: savePassword) { _, on in
+                            if !on { password = "" }
+                        }
+                    if savePassword {
+                        SecureField("Wachtwoord", text: $password,
+                                    prompt: Text(entry.hasSavedPassword ? "•••••••• (bewaard; leeg laten om te behouden)"
+                                                                        : "wachtwoord"))
+                        Toggle("Touch ID vragen voor het bewaarde wachtwoord", isOn: $entry.requireTouchID)
+                    }
+                } header: {
+                    Text("Aanmelden")
+                } footer: {
+                    Text(passwordFooter)
+                        .font(.caption)
+                        .foregroundStyle(missingPassword ? .red : .secondary)
                 }
 
                 Section("Scherm en invoer") {
@@ -79,11 +89,26 @@ struct HostEditor: View {
                     .keyboardShortcut(.cancelAction)
                 Button(isNew ? "Toevoegen" : "Bewaren") { save() }
                     .keyboardShortcut(.defaultAction)
-                    .disabled(entry.host.trimmingCharacters(in: .whitespaces).isEmpty)
+                    .disabled(entry.host.trimmingCharacters(in: .whitespaces).isEmpty || missingPassword)
             }
             .padding()
         }
         .frame(width: 480, height: 640)
+    }
+
+    /// Bewaren staat aan, maar er is nog geen wachtwoord bewaard of ingevuld
+    private var missingPassword: Bool {
+        savePassword && !entry.hasSavedPassword && password.isEmpty
+    }
+
+    private var passwordFooter: String {
+        if !savePassword {
+            return entry.hasSavedPassword
+                ? "Het bewaarde wachtwoord wordt uit de sleutelhanger verwijderd. Bij elke verbinding wordt het gevraagd."
+                : "Het wachtwoord wordt bij elke verbinding gevraagd. Daar kun je het alsnog laten bewaren."
+        }
+        if missingPassword { return "Vul het wachtwoord in dat bewaard moet worden." }
+        return "Het wachtwoord staat versleuteld in je login-sleutelhanger, nooit in het adresboek."
     }
 
     private func save() {
