@@ -70,18 +70,27 @@ def _to_remote(info: SessionInfo, x: float, y: float) -> tuple[int, int]:
     return rx, ry
 
 
+def _tool_error(e: ClientError) -> ToolError:
+    if e.code == "ai-disabled":
+        return ToolError(
+            "de gebruiker heeft AI-besturing uitgeschakeld in het rdp-mcp-venster "
+            "(Ctrl+Alt+Shift+A). Vraag de gebruiker om ze terug aan te zetten."
+        )
+    if e.code == "clipboard-local":
+        return ToolError(
+            "het klembord bevat iets dat de gebruiker op de eigen Mac kopieerde; dat wordt "
+            "bewust niet gedeeld. Kopieer eerst iets in de remote sessie (bv. ctrl+c)."
+        )
+    return ToolError(str(e))
+
+
 def _run(conn: Connection, line: str) -> None:
     global _last_input
     try:
         conn.cmd(line)
         _last_input = time.monotonic()
     except ClientError as e:
-        if e.code == "ai-disabled":
-            raise ToolError(
-                "de gebruiker heeft AI-besturing uitgeschakeld in het rdp-mcp-venster "
-                "(Ctrl+Alt+Shift+A). Vraag de gebruiker om ze terug aan te zetten."
-            ) from e
-        raise ToolError(str(e)) from e
+        raise _tool_error(e) from e
 
 
 def _press(conn: Connection, codes: list[int]) -> None:
@@ -271,6 +280,41 @@ def press_keys(keys: str, session: str | None = None) -> str:
             _press(conn, codes)
             time.sleep(0.05)
     return f"ingedrukt: {keys}"
+
+
+@mcp.tool()
+def get_clipboard(session: str | None = None) -> str:
+    """Lees de tekst op het klembord van de remote sessie, bv. na selecteren + press_keys('ctrl+c').
+
+    Handig om tekst uit een venster te halen zonder hem van een screenshot af te lezen.
+    """
+    s, _ = _pick(session)
+    pending = SETTLE_SECONDS - (time.monotonic() - _last_input)
+    if pending > 0:
+        time.sleep(pending)  # de server meldt nieuwe klembordinhoud pas na ctrl+c
+    with s.connect() as conn:
+        try:
+            return conn.clip_get()
+        except ClientError as e:
+            raise _tool_error(e) from e
+
+
+@mcp.tool()
+def set_clipboard(text: str, session: str | None = None) -> str:
+    """Zet tekst op het klembord van de remote sessie. Plak daarna met press_keys('ctrl+v').
+
+    Veel sneller dan type_text voor lange teksten, en elk teken komt exact over.
+    Het klembord van de Mac van de gebruiker blijft ongemoeid.
+    """
+    global _last_input
+    s, _ = _pick(session)
+    with s.connect() as conn:
+        try:
+            conn.clip_set(text)
+        except ClientError as e:
+            raise _tool_error(e) from e
+    _last_input = time.monotonic()
+    return f"{len(text)} tekens op het remote klembord gezet; plak met press_keys('ctrl+v')"
 
 
 @mcp.tool()

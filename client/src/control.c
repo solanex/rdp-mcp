@@ -115,8 +115,75 @@ static bool cmd_screenshot(mcpContext* mc, int fd)
 	return ok;
 }
 
+#define CLIP_MAX_BYTES (4u * 1024u * 1024u)
+
+static bool clip_error(int fd, int rc)
+{
+	switch (rc)
+	{
+		case CLIP_DISABLED:
+			return reply(fd, "ERR clipboard-disabled klembord staat uit (--no-clipboard of -clipboard)");
+		case CLIP_LOCAL_PRIVATE:
+			return reply(fd, "ERR clipboard-local het klembord bevat inhoud van de Mac van de "
+			                 "gebruiker; die wordt niet gedeeld met de AI");
+		default:
+			return reply(fd, "ERR clipboard-not-ready het klembordkanaal is (nog) niet actief");
+	}
+}
+
+static bool cmd_clipget(mcpContext* mc, int fd)
+{
+	char* text = NULL;
+	const int rc = rdpmcp_clip_get(mc, &text, 2000);
+	if (rc != CLIP_OK)
+		return clip_error(fd, rc);
+	const size_t len = text ? strlen(text) : 0;
+	const bool ok = reply(fd, "OK %zu", len) && (len == 0 || write_all(fd, text, len));
+	free(text);
+	return ok;
+}
+
+static bool cmd_clipset(mcpContext* mc, int fd, FILE* in, const char* line)
+{
+	size_t len = 0;
+	if (sscanf(line, "%*s %zu", &len) != 1 || len > CLIP_MAX_BYTES)
+	{
+		/* payload niet betrouwbaar over te slaan: melden en verbinding sluiten */
+		reply(fd, "ERR syntax CLIPSET <bytes> gevolgd door de UTF-8-tekst (max 4 MiB)");
+		return false;
+	}
+
+	char* text = malloc(len + 1);
+	if (!text)
+		return false;
+	if (len > 0 && fread(text, 1, len, in) != len)
+	{
+		free(text);
+		return false;
+	}
+	text[len] = '\0';
+
+	/* payload altijd inlezen, ook bij een weigering, zodat het protocol synchroon blijft */
+	bool ok;
+	if (!atomic_load(&mc->connected))
+		ok = reply(fd, "ERR not-connected sessie is niet verbonden");
+	else if (!atomic_load(&mc->ai_enabled))
+		ok = reply(fd, "ERR ai-disabled de gebruiker heeft AI-besturing uitgeschakeld");
+	else if (memchr(text, '\0', len))
+		ok = reply(fd, "ERR syntax tekst bevat een NUL-teken");
+	else
+	{
+		const int rc = rdpmcp_clip_set_ai(mc, text);
+		if (rc == CLIP_OK)
+			ai_touch(mc, -1, -1);
+		ok = rc == CLIP_OK ? reply(fd, "OK") : clip_error(fd, rc);
+	}
+	free(text);
+	return ok;
+}
+
 /* Verwerkt één commandoregel; false = verbinding sluiten */
-static bool handle_line(mcpContext* mc, int fd, char* line)
+static bool handle_line(mcpContext* mc, int fd, FILE* in, char* line)
 {
 	char cmd[16] = { 0 };
 	char a1[16] = { 0 };
@@ -142,11 +209,18 @@ static bool handle_line(mcpContext* mc, int fd, char* line)
 	if (strcmp(cmd, "SCREENSHOT") == 0)
 		return cmd_screenshot(mc, fd);
 
+	/* CLIPSET leest eerst zijn payload en controleert daarna zelf */
+	if (strcmp(cmd, "CLIPSET") == 0)
+		return cmd_clipset(mc, fd, in, line);
+
 	/* Alles hieronder is invoer: enkel als de gebruiker AI-besturing toelaat */
 	if (!atomic_load(&mc->connected))
 		return reply(fd, "ERR not-connected sessie is niet verbonden");
 	if (!atomic_load(&mc->ai_enabled))
 		return reply(fd, "ERR ai-disabled de gebruiker heeft AI-besturing uitgeschakeld");
+
+	if (strcmp(cmd, "CLIPGET") == 0)
+		return cmd_clipget(mc, fd);
 
 	if (strcmp(cmd, "MOVE") == 0)
 	{
@@ -230,7 +304,7 @@ static void* conn_thread(void* arg)
 		while (fgets(line, sizeof(line), in))
 		{
 			line[strcspn(line, "\r\n")] = '\0';
-			if (!handle_line(c->mc, c->fd, line))
+			if (!handle_line(c->mc, c->fd, in, line))
 				break;
 		}
 		fclose(in); /* sluit ook c->fd */

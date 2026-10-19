@@ -42,8 +42,22 @@ typedef struct
 	_Atomic uint64_t ai_last_ms;
 	atomic_int ai_x, ai_y;
 
+	/* Laatste lokale toets/klik van de gebruiker (SDL_GetTicks) */
+	_Atomic uint64_t user_last_ms;
+
+	/* Klembord (clipboard.c), beschermd door clip_lock */
+	struct s_cliprdr_client_context* cliprdr;
+	pthread_mutex_t clip_lock;
+	pthread_cond_t clip_cond;
+	int clip_owner;          /* CLIP_OWNER_* */
+	char* clip_local_text;   /* Mac-klembord (UTF-8, LF) */
+	char* clip_remote_text;  /* remote klembord (UTF-8, LF) */
+	char* clip_ai_text;      /* door de AI gezet (UTF-8, LF) */
+	bool clip_pending;       /* wachten op tekst van de server */
+
 	/* Opties */
 	bool cmd_as_win;
+	bool clipboard_enabled;
 
 	/* Control-socket */
 	char host[256];
@@ -57,11 +71,40 @@ extern Uint32 RDPMCP_EVENT_PAINT;
 extern Uint32 RDPMCP_EVENT_RESIZE;
 extern Uint32 RDPMCP_EVENT_DISCONNECTED;
 extern Uint32 RDPMCP_EVENT_AI;
+extern Uint32 RDPMCP_EVENT_CLIPBOARD; /* remote tekst klaar voor het Mac-klembord */
 
 void rdpmcp_push_event(Uint32 type);
 
 /* keymap.c: SDL-scancode naar RDP-scancode (0x100 = extended), 0 = onbekend */
 uint32_t rdpmcp_sdl_to_rdp_scancode(SDL_Scancode sc, bool cmd_as_win);
+
+/* clipboard.c */
+enum
+{
+	CLIP_OWNER_NONE,
+	CLIP_OWNER_LOCAL,  /* gebruiker kopieerde iets op de Mac */
+	CLIP_OWNER_REMOTE, /* er werd iets gekopieerd in de remote sessie */
+	CLIP_OWNER_AI      /* de AI zette tekst via CLIPSET */
+};
+
+enum
+{
+	CLIP_OK,
+	CLIP_DISABLED,
+	CLIP_LOCAL_PRIVATE,
+	CLIP_NOT_READY
+};
+
+void rdpmcp_clip_init(mcpContext* mc);
+void rdpmcp_clip_free(mcpContext* mc);
+void rdpmcp_clip_connected(mcpContext* mc, struct s_cliprdr_client_context* cliprdr);
+void rdpmcp_clip_disconnected(mcpContext* mc);
+/* main-thread: het Mac-klembord is gewijzigd / remote tekst naar de Mac zetten */
+void rdpmcp_clip_local_changed(mcpContext* mc);
+void rdpmcp_clip_apply_remote(mcpContext* mc);
+/* control-thread: lezen (wacht max. timeout_ms op de server) en zetten */
+int rdpmcp_clip_get(mcpContext* mc, char** text, int timeout_ms);
+int rdpmcp_clip_set_ai(mcpContext* mc, const char* text);
 
 /* control.c */
 bool rdpmcp_control_start(mcpContext* mc);

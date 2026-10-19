@@ -10,6 +10,7 @@
 
 #include <freerdp/client/cmdline.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/client/cliprdr.h>
 #include <freerdp/input.h>
 #include <winpr/synch.h>
 
@@ -19,6 +20,7 @@ Uint32 RDPMCP_EVENT_PAINT;
 Uint32 RDPMCP_EVENT_RESIZE;
 Uint32 RDPMCP_EVENT_DISCONNECTED;
 Uint32 RDPMCP_EVENT_AI;
+Uint32 RDPMCP_EVENT_CLIPBOARD;
 
 #define AI_HIGHLIGHT_MS 1500
 
@@ -129,6 +131,24 @@ static BOOL mcp_desktop_resize(rdpContext* context)
 
 /* ---------- FreeRDP-callbacks ---------- */
 
+/* Klembord zelf afhandelen; de standaardhandlers van FreeRDP koppelen de rest,
+ * o.a. de grafische pipeline (/gfx) aan GDI */
+static void mcp_channel_connected(void* context, const ChannelConnectedEventArgs* e)
+{
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+		rdpmcp_clip_connected((mcpContext*)context, (CliprdrClientContext*)e->pInterface);
+	else
+		freerdp_client_OnChannelConnectedEventHandler(context, e);
+}
+
+static void mcp_channel_disconnected(void* context, const ChannelDisconnectedEventArgs* e)
+{
+	if (strcmp(e->name, CLIPRDR_SVC_CHANNEL_NAME) == 0)
+		rdpmcp_clip_disconnected((mcpContext*)context);
+	else
+		freerdp_client_OnChannelDisconnectedEventHandler(context, e);
+}
+
 static BOOL mcp_pre_connect(freerdp* instance)
 {
 	rdpContext* context = instance->context;
@@ -143,10 +163,14 @@ static BOOL mcp_pre_connect(freerdp* instance)
 	if (!freerdp_settings_set_bool(settings, FreeRDP_UnicodeInput, TRUE))
 		return FALSE;
 
-	/* Standaardhandlers van FreeRDP koppelen o.a. de grafische pipeline (/gfx) aan GDI */
-	PubSub_SubscribeChannelConnected(context->pubSub, freerdp_client_OnChannelConnectedEventHandler);
-	PubSub_SubscribeChannelDisconnected(context->pubSub,
-	                                    freerdp_client_OnChannelDisconnectedEventHandler);
+	mcpContext* mc = (mcpContext*)context;
+	if (!mc->clipboard_enabled &&
+	    !freerdp_settings_set_bool(settings, FreeRDP_RedirectClipboard, FALSE))
+		return FALSE;
+	mc->clipboard_enabled = freerdp_settings_get_bool(settings, FreeRDP_RedirectClipboard);
+
+	PubSub_SubscribeChannelConnected(context->pubSub, mcp_channel_connected);
+	PubSub_SubscribeChannelDisconnected(context->pubSub, mcp_channel_disconnected);
 	return TRUE;
 }
 
@@ -195,7 +219,9 @@ static BOOL mcp_client_new(freerdp* instance, rdpContext* context)
 
 	pthread_mutex_init(&mc->fb_lock, NULL);
 	pthread_mutex_init(&mc->input_lock, NULL);
+	rdpmcp_clip_init(mc);
 	atomic_store(&mc->ai_enabled, true);
+	mc->clipboard_enabled = true;
 	mc->listen_fd = -1;
 	return TRUE;
 }
@@ -209,6 +235,7 @@ static void mcp_client_free(freerdp* instance, rdpContext* context)
 	mc->fb = NULL;
 	pthread_mutex_destroy(&mc->fb_lock);
 	pthread_mutex_destroy(&mc->input_lock);
+	rdpmcp_clip_free(mc);
 }
 
 static int RdpClientEntry(RDP_CLIENT_ENTRY_POINTS* ep)
@@ -265,6 +292,7 @@ static void send_key(mcpContext* mc, uint32_t code, bool down, bool repeat)
 	pthread_mutex_unlock(&mc->input_lock);
 	if (code < 512)
 		key_down_state[code] = down;
+	atomic_store(&mc->user_last_ms, SDL_GetTicks());
 }
 
 /* Bij focusverlies (bv. Cmd+Tab) alle ingedrukte toetsen loslaten, anders blijven ze hangen */
@@ -333,6 +361,11 @@ static void handle_event(mcpContext* mc, SDL_Event* ev, bool* running)
 		*running = false;
 		return;
 	}
+	if (ev->type == RDPMCP_EVENT_CLIPBOARD)
+	{
+		rdpmcp_clip_apply_remote(mc);
+		return;
+	}
 
 	switch (ev->type)
 	{
@@ -366,6 +399,7 @@ static void handle_event(mcpContext* mc, SDL_Event* ev, bool* running)
 		{
 			SDL_ConvertEventToRenderCoordinates(mc->renderer, ev);
 			const bool down = ev->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+			atomic_store(&mc->user_last_ms, SDL_GetTicks());
 			const float x = ev->button.x;
 			const float y = ev->button.y;
 			switch (ev->button.button)
@@ -411,6 +445,10 @@ static void handle_event(mcpContext* mc, SDL_Event* ev, bool* running)
 
 		case SDL_EVENT_WINDOW_FOCUS_GAINED:
 			sync_lock_keys(mc);
+			break;
+
+		case SDL_EVENT_CLIPBOARD_UPDATE:
+			rdpmcp_clip_local_changed(mc);
 			break;
 
 		case SDL_EVENT_WINDOW_FOCUS_LOST:
@@ -497,6 +535,7 @@ static void usage_extra(void)
 	printf("\nrdp-mcp-opties (bovenop de gewone FreeRDP-opties):\n"
 	       "  --ai-off       start met AI-besturing uitgeschakeld\n"
 	       "  --cmd-as-win   Cmd-toets = Windows-toets (standaard: Cmd = Ctrl)\n"
+	       "  --no-clipboard geen klembord delen (ook niet voor de AI)\n"
 	       "\nVoorbeeld: rdp-mcp-client /v:server.example.be /u:jan /d:DOMEIN\n"
 	       "Sneltoets in het venster: Ctrl+Alt+Shift+A zet AI-besturing aan/uit.\n");
 }
@@ -506,6 +545,7 @@ int main(int argc, char* argv[])
 	int rc = 1;
 	bool ai_off = false;
 	bool cmd_as_win = false;
+	bool no_clipboard = false;
 
 	/* eigen opties eruit filteren, de rest gaat naar de FreeRDP-parser */
 	char** args = calloc((size_t)argc + 1, sizeof(char*));
@@ -516,6 +556,8 @@ int main(int argc, char* argv[])
 			ai_off = true;
 		else if (strcmp(argv[i], "--cmd-as-win") == 0)
 			cmd_as_win = true;
+		else if (strcmp(argv[i], "--no-clipboard") == 0)
+			no_clipboard = true;
 		else
 			args[nargs++] = argv[i];
 	}
@@ -527,6 +569,7 @@ int main(int argc, char* argv[])
 		goto out_args;
 	mcpContext* mc = (mcpContext*)context;
 	mc->cmd_as_win = cmd_as_win;
+	mc->clipboard_enabled = !no_clipboard;
 	if (ai_off)
 		atomic_store(&mc->ai_enabled, false);
 
@@ -546,11 +589,12 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
 		goto out_context;
 	}
-	const Uint32 base = SDL_RegisterEvents(4);
+	const Uint32 base = SDL_RegisterEvents(5);
 	RDPMCP_EVENT_PAINT = base;
 	RDPMCP_EVENT_RESIZE = base + 1;
 	RDPMCP_EVENT_DISCONNECTED = base + 2;
 	RDPMCP_EVENT_AI = base + 3;
+	RDPMCP_EVENT_CLIPBOARD = base + 4;
 
 	/* Verbinden vóór het venster opent, zodat wachtwoordvragen in de terminal rustig kunnen */
 	if (!freerdp_connect(context->instance))
@@ -588,6 +632,7 @@ int main(int argc, char* argv[])
 	}
 	SDL_SetRenderVSync(mc->renderer, 1);
 	update_title(mc);
+	rdpmcp_clip_local_changed(mc); /* huidige Mac-inhoud aanbieden */
 
 	if (!rdpmcp_control_start(mc))
 		fprintf(stderr, "Waarschuwing: control-socket niet gestart, MCP werkt niet\n");

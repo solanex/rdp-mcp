@@ -57,6 +57,7 @@ Op Linux werkt het ook. Je hebt dan de ontwikkelpakketten van FreeRDP 3 en SDL3 
    - `--ai-off`: start met AI-besturing uitgeschakeld
    - `--cmd-as-win`: de Mac-Cmd-toets wordt de Windows-toets. Standaard is Cmd = Ctrl,
      zodat Cmd+C en Cmd+V werken zoals op de Mac.
+   - `--no-clipboard`: het klembord helemaal niet delen, ook niet met de AI
 
    `rdp-mcp-client /help` toont alle opties.
 
@@ -103,6 +104,8 @@ Op Linux werkt het ook. Je hebt dan de ontwikkelpakketten van FreeRDP 3 en SDL3 
 | `move_mouse` | muis verplaatsen (hover) |
 | `drag` | slepen van A naar B |
 | `scroll` | muiswiel op/neer/links/rechts |
+| `get_clipboard` | tekst op het remote klembord lezen, bv. na `ctrl+c` |
+| `set_clipboard` | tekst op het remote klembord zetten, daarna plakken met `ctrl+v` |
 | `type_text` | tekst typen via Unicode, dus onafhankelijk van de toetsenbordindeling |
 | `press_keys` | sneltoetsen, bv. `ctrl+c`, `win+r`, `alt+f4`, `ctrl+alt+delete`, `tab tab enter` |
 | `wait` | even wachten tot iets geladen is |
@@ -120,6 +123,25 @@ naar de echte resolutie.
 | `RDP_MCP_SETTLE` | `0.4` | seconden die een screenshot minstens wacht na de laatste actie |
 | `RDP_MCP_DIR` | `~/.rdp-mcp` | map met de sockets (ook voor de client) |
 
+## Klembord
+
+Tekst wordt in beide richtingen gedeeld, zoals bij een gewone RDP-client. Kopieer je
+op de Mac, dan plak je het remote met Cmd+V; kopieer je remote, dan staat het op het
+klembord van je Mac.
+
+Voor de AI gelden twee regels:
+
+- **De AI leest je Mac-klembord nooit.** `get_clipboard` geeft alleen tekst terug die
+  in de remote sessie gekopieerd werd of die de AI zelf zette. Zolang het klembord
+  iets bevat dat jij op de Mac kopieerde, krijgt de AI een weigering.
+- **De AI kan je Mac-klembord niet remote plakken.** Drukt de AI zelf Ctrl+V terwijl
+  je Mac-inhoud actief is, dan geeft de client die inhoud niet door en meldt dat in
+  de terminal. Plak jij zelf, dan werkt het gewoon. De client beslist dat op basis van
+  wie de laatste toets of klik gaf.
+
+`set_clipboard` verandert alleen het remote klembord; het klembord van je Mac blijft
+zoals het was. Als AI-besturing uit staat, kan de AI het klembord lezen noch zetten.
+
 ## Beveiliging
 
 - De socket staat in `~/.rdp-mcp/` met rechten `0700`/`0600`. Alleen jouw eigen
@@ -130,7 +152,8 @@ naar de echte resolutie.
 
 ## Beperkingen (v0.1)
 
-- Geen klembord, geluid, drive-redirectie of dynamische resolutie. Een groter
+- Het klembord deelt alleen tekst, geen afbeeldingen of bestanden.
+- Geen geluid, drive-redirectie of dynamische resolutie. Een groter
   venster schaalt het beeld, maar de remote resolutie blijft gelijk.
 - De muiscursor in het venster is de lokale systeemcursor; de cursorvorm van de server wordt niet overgenomen.
 - Zonder Unicode-ondersteuning op de server (Windows heeft die wel) kan

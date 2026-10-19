@@ -13,6 +13,7 @@ add_executable(rdp-mcp-client
   src/main.c
   src/control.c
   src/keymap.c
+  src/clipboard.c
 )
 target_compile_options(rdp-mcp-client PRIVATE -Wall -Wextra -Wno-unused-parameter)
 target_link_libraries(rdp-mcp-client PRIVATE PkgConfig::FREERDP SDL3::SDL3 Threads::Threads)

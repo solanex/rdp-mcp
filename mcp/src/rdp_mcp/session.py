@@ -8,6 +8,8 @@ Protocol (tekst, één commando per regel, zie ook ../../PROTOCOL.md):
   WHEEL <v|h> <notches> <x> <y> (v: positief = omhoog, h: positief = rechts)
   KEY <down|up> <scancode>      (RDP-scancode, hex; 0x100 = extended)
   UNICODE <codeunit>            (UTF-16 code unit, hex; indrukken + loslaten)
+  CLIPGET                       -> OK <bytes>\n<UTF-8-tekst>
+  CLIPSET <bytes>\n<UTF-8-tekst> -> OK
 Fouten komen terug als: ERR <code> <uitleg>
 """
 
@@ -76,6 +78,23 @@ class Connection:
         if len(data) != n:
             raise ClientError("protocol", "screenshot onvolledig ontvangen")
         return w, h, data
+
+    def clip_get(self) -> str:
+        n = int(self._send("CLIPGET").strip() or 0)
+        data = self._file.read(n) if n else b""
+        if len(data) != n:
+            raise ClientError("protocol", "klembord onvolledig ontvangen")
+        return data.decode("utf-8", errors="replace")
+
+    def clip_set(self, text: str) -> None:
+        data = text.encode("utf-8")
+        self._sock.sendall(f"CLIPSET {len(data)}\n".encode() + data)
+        reply = self._file.readline().rstrip(b"\r\n")
+        if reply.startswith(b"ERR"):
+            parts = reply.decode(errors="replace").split(" ", 2)
+            raise ClientError(parts[1] if len(parts) > 1 else "error", parts[2] if len(parts) > 2 else "")
+        if not reply.startswith(b"OK"):
+            raise ClientError("protocol", f"onverwacht antwoord: {reply!r}")
 
     def close(self) -> None:
         self._file.close()
