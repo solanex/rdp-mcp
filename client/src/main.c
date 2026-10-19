@@ -17,6 +17,7 @@ static Uint32 EV_FRAME;
 static Uint32 EV_STATE;
 static Uint32 EV_AI;
 static Uint32 EV_CLIPBOARD;
+static Uint32 EV_POINTER;
 
 typedef struct
 {
@@ -30,7 +31,14 @@ typedef struct
 	const char* host;
 	uint64_t ai_last;
 	int ai_x, ai_y;
+	SDL_Cursor* cursor;
 } app_t;
+
+typedef struct
+{
+	int w, h, hot_x, hot_y; /* w = 0: verbergen, w < 0: standaardcursor */
+	uint8_t bgra[];
+} pointer_msg;
 
 /* ---------- callbacks (achtergrondthreads) ---------- */
 
@@ -66,6 +74,44 @@ static void cb_clipboard(void* user, const char* text)
 {
 	(void)user;
 	push(EV_CLIPBOARD, 0, strdup(text), NULL);
+}
+
+static void cb_pointer(void* user, const uint8_t* bgra, int w, int h, int hot_x, int hot_y)
+{
+	(void)user;
+	const size_t len = bgra ? (size_t)w * (size_t)h * 4 : 0;
+	pointer_msg* m = malloc(sizeof(*m) + len);
+	if (!m)
+		return;
+	*m = (pointer_msg){ bgra ? w : (w < 0 ? -1 : 0), h, hot_x, hot_y };
+	if (len)
+		memcpy(m->bgra, bgra, len);
+	push(EV_POINTER, 0, m, NULL);
+}
+
+static void apply_pointer(app_t* a, pointer_msg* m)
+{
+	if (m->w == 0)
+	{
+		SDL_HideCursor();
+		return;
+	}
+	SDL_Cursor* next = NULL;
+	if (m->w > 0)
+	{
+		SDL_Surface* surface =
+		    SDL_CreateSurfaceFrom(m->w, m->h, SDL_PIXELFORMAT_BGRA32, m->bgra, m->w * 4);
+		if (surface)
+		{
+			next = SDL_CreateColorCursor(surface, m->hot_x, m->hot_y);
+			SDL_DestroySurface(surface);
+		}
+	}
+	SDL_SetCursor(next ? next : SDL_GetDefaultCursor());
+	SDL_ShowCursor();
+	if (a->cursor)
+		SDL_DestroyCursor(a->cursor);
+	a->cursor = next;
 }
 
 /* ---------- invoer en tekenen (main-thread) ---------- */
@@ -287,6 +333,7 @@ int main(int argc, char* argv[])
 		.state = cb_state,
 		.ai_activity = cb_ai,
 		.remote_clipboard = cb_clipboard,
+		.pointer = cb_pointer,
 		/* certificaat en wachtwoord: in de terminal */
 	};
 
@@ -313,11 +360,12 @@ int main(int argc, char* argv[])
 		fprintf(stderr, "SDL_Init: %s\n", SDL_GetError());
 		goto out;
 	}
-	const Uint32 base = SDL_RegisterEvents(4);
+	const Uint32 base = SDL_RegisterEvents(5);
 	EV_FRAME = base;
 	EV_STATE = base + 1;
 	EV_AI = base + 2;
 	EV_CLIPBOARD = base + 3;
+	EV_POINTER = base + 4;
 
 	a.window = SDL_CreateWindow("rdp-mcp", 1024, 768,
 	                            SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
@@ -386,6 +434,11 @@ int main(int argc, char* argv[])
 					}
 					needs_render = true;
 				}
+				else if (ev.type == EV_POINTER)
+				{
+					apply_pointer(&a, ev.user.data1);
+					free(ev.user.data1);
+				}
 				else if (ev.type == EV_CLIPBOARD)
 				{
 					SDL_SetClipboardText(ev.user.data1);
@@ -408,6 +461,8 @@ int main(int argc, char* argv[])
 out_sdl:
 	rdpmcp_session_free(a.session);
 	a.session = NULL;
+	if (a.cursor)
+		SDL_DestroyCursor(a.cursor);
 	if (a.texture)
 		SDL_DestroyTexture(a.texture);
 	if (a.renderer)

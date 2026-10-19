@@ -101,6 +101,16 @@ final class RDPSession: ObservableObject, Identifiable {
             let value = String(cString: text)
             DispatchQueue.main.async { SessionManager.setPasteboard(value, from: s) }
         }
+        cb.pointer = { user, bgra, w, h, hotX, hotY in
+            let s = RDPSession.from(user)
+            let shape: RemoteCursor
+            if let bgra, w > 0, h > 0 {
+                shape = .image(Data(bytes: bgra, count: Int(w) * Int(h) * 4), Int(w), Int(h), Int(hotX), Int(hotY))
+            } else {
+                shape = w == 0 ? .hidden : .system
+            }
+            DispatchQueue.main.async { s.view.setRemoteCursor(shape) }
+        }
         cb.notice = { user, message in
             guard let message else { return }
             let s = RDPSession.from(user)

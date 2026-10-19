@@ -6,7 +6,9 @@
 
 #include <freerdp/channels/disp.h>
 #include <freerdp/client/cmdline.h>
+#include <freerdp/codec/color.h>
 #include <freerdp/gdi/gdi.h>
+#include <freerdp/graphics.h>
 #include <freerdp/input.h>
 #include <freerdp/settings.h>
 #include <winpr/synch.h>
@@ -121,6 +123,96 @@ static BOOL mcp_desktop_resize(rdpContext* context)
 
 	fb_update(s, 0, 0, (int)context->gdi->width, (int)context->gdi->height);
 	return TRUE;
+}
+
+/* ---------- muiscursor (rdp-thread) ---------- */
+
+typedef struct
+{
+	rdpPointer pointer; /* moet eerst staan */
+	uint8_t* bgra;
+} mcp_pointer;
+
+static BOOL pointer_new(rdpContext* context, rdpPointer* pointer)
+{
+	mcp_pointer* p = (mcp_pointer*)pointer;
+	const size_t w = pointer->width;
+	const size_t h = pointer->height;
+	if (w == 0 || h == 0 || w > 384 || h > 384)
+		return TRUE; /* niets te tonen; Set valt dan terug op de standaardcursor */
+	p->bgra = calloc(w * h, 4);
+	if (!p->bgra)
+		return FALSE;
+	if (!freerdp_image_copy_from_pointer_data(p->bgra, PIXEL_FORMAT_BGRA32, (UINT32)(w * 4), 0, 0,
+	                                          (UINT32)w, (UINT32)h, pointer->xorMaskData,
+	                                          pointer->lengthXorMask, pointer->andMaskData,
+	                                          pointer->lengthAndMask, pointer->xorBpp,
+	                                          &context->gdi->palette))
+	{
+		free(p->bgra);
+		p->bgra = NULL;
+	}
+	return TRUE;
+}
+
+static void pointer_free(rdpContext* context, rdpPointer* pointer)
+{
+	mcp_pointer* p = (mcp_pointer*)pointer;
+	WINPR_UNUSED(context);
+	free(p->bgra);
+	p->bgra = NULL;
+}
+
+static BOOL pointer_set(rdpContext* context, rdpPointer* pointer)
+{
+	rdpmcp_session* s = (rdpmcp_session*)context;
+	const mcp_pointer* p = (const mcp_pointer*)pointer;
+	if (!s->cb.pointer)
+		return TRUE;
+	if (p->bgra)
+		s->cb.pointer(s->cb.user, p->bgra, (int)pointer->width, (int)pointer->height,
+		              (int)pointer->xPos, (int)pointer->yPos);
+	else
+		s->cb.pointer(s->cb.user, NULL, -1, 0, 0, 0);
+	return TRUE;
+}
+
+static BOOL pointer_set_null(rdpContext* context)
+{
+	rdpmcp_session* s = (rdpmcp_session*)context;
+	if (s->cb.pointer)
+		s->cb.pointer(s->cb.user, NULL, 0, 0, 0, 0);
+	return TRUE;
+}
+
+static BOOL pointer_set_default(rdpContext* context)
+{
+	rdpmcp_session* s = (rdpmcp_session*)context;
+	if (s->cb.pointer)
+		s->cb.pointer(s->cb.user, NULL, -1, 0, 0, 0);
+	return TRUE;
+}
+
+static BOOL pointer_set_position(rdpContext* context, UINT32 x, UINT32 y)
+{
+	/* De server wil de muis verplaatsen; de lokale muis laten we met rust */
+	WINPR_UNUSED(context);
+	WINPR_UNUSED(x);
+	WINPR_UNUSED(y);
+	return TRUE;
+}
+
+static void register_pointer(rdpContext* context)
+{
+	rdpPointer pointer = { 0 };
+	pointer.size = sizeof(mcp_pointer);
+	pointer.New = pointer_new;
+	pointer.Free = pointer_free;
+	pointer.Set = pointer_set;
+	pointer.SetNull = pointer_set_null;
+	pointer.SetDefault = pointer_set_default;
+	pointer.SetPosition = pointer_set_position;
+	graphics_register_pointer(context->graphics, &pointer);
 }
 
 /* ---------- dynamische resolutie ---------- */
@@ -243,6 +335,7 @@ static BOOL mcp_post_connect(freerdp* instance)
 
 	if (!gdi_init(instance, PIXEL_FORMAT_BGRX32))
 		return FALSE;
+	register_pointer(context);
 
 	context->update->BeginPaint = mcp_begin_paint;
 	context->update->EndPaint = mcp_end_paint;

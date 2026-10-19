@@ -60,6 +60,10 @@ extern "C"
 		void (*ai_activity)(void* user, int x, int y);
 		/* Tekst gekopieerd in de remote sessie: op het lokale klembord zetten */
 		void (*remote_clipboard)(void* user, const char* text);
+		/* Muiscursor van de server: BGRA32 (niet voorvermenigvuldigd), w x h pixels met
+		 * hotspot. bgra = NULL en w = 0: cursor verbergen; bgra = NULL en w < 0: de
+		 * standaardcursor van het systeem. De buffer is enkel geldig tijdens de oproep. */
+		void (*pointer)(void* user, const uint8_t* bgra, int w, int h, int hot_x, int hot_y);
 		/* Korte melding voor de gebruiker (bv. geweigerde AI-plakactie). NULL = stdout */
 		void (*notice)(void* user, const char* message);
 

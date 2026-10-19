@@ -2,6 +2,14 @@ import AppKit
 import Carbon.HIToolbox
 import CRdpMcpCore
 
+/// Cursorvorm zoals de server ze doorgeeft
+enum RemoteCursor {
+    case system
+    case hidden
+    /// BGRA-pixels, breedte, hoogte, hotspot x, hotspot y
+    case image(Data, Int, Int, Int, Int)
+}
+
 /// Toont het remote scherm en geeft muis en toetsenbord door.
 /// Toetsen komen binnen via SessionManager (een lokale event-monitor), zodat ook
 /// Cmd-combinaties en hun keyUp aankomen.
@@ -24,6 +32,8 @@ final class RDPView: NSView {
     private var resizeWork: DispatchWorkItem?
     private let overlay = AIOverlayView()
     private var resignObserver: NSObjectProtocol?
+    private var remoteCursor: RemoteCursor = .system
+    private var cursor: NSCursor = .arrow
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -68,6 +78,7 @@ final class RDPView: NSView {
             remoteW = width
             remoteH = height
             dirty = rdpmcp_rect(x: 0, y: 0, w: w, h: ht)
+            rebuildCursor()
             session?.remoteSize = CGSize(width: width, height: height)
         }
         if let bitmap, let dst = bitmap.data, dirty.w > 0, dirty.h > 0 {
@@ -110,11 +121,59 @@ final class RDPView: NSView {
         overlay.flash(frame: contentRect, point: x >= 0 ? viewPoint(remoteX: x, y: y) : nil)
     }
 
+    // MARK: - muiscursor
+
+    func setRemoteCursor(_ shape: RemoteCursor) {
+        remoteCursor = shape
+        rebuildCursor()
+    }
+
+    /// NSCursor maken op de schaal waarop het remote beeld getoond wordt
+    private func rebuildCursor() {
+        switch remoteCursor {
+        case .system:
+            cursor = .arrow
+        case .hidden:
+            let image = NSImage(size: NSSize(width: 1, height: 1))
+            cursor = NSCursor(image: image, hotSpot: .zero)
+        case let .image(data, w, h, hotX, hotY):
+            let scale = remoteW > 0 ? contentRect.width / CGFloat(remoteW) : 1
+            guard let provider = CGDataProvider(data: data as CFData),
+                  let cg = CGImage(width: w, height: h, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: w * 4,
+                                   space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                                   bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.first.rawValue
+                                       | CGBitmapInfo.byteOrder32Little.rawValue),
+                                   provider: provider, decode: nil, shouldInterpolate: true,
+                                   intent: .defaultIntent)
+            else {
+                cursor = .arrow
+                break
+            }
+            let size = NSSize(width: CGFloat(w) * scale, height: CGFloat(h) * scale)
+            cursor = NSCursor(image: NSImage(cgImage: cg, size: size),
+                              hotSpot: NSPoint(x: CGFloat(hotX) * scale, y: CGFloat(hotY) * scale))
+        }
+        window?.invalidateCursorRects(for: self)
+        if isActive, let window, window.isKeyWindow,
+           bounds.contains(convert(window.mouseLocationOutsideOfEventStream, from: nil)) {
+            cursor.set()
+        }
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: cursor)
+    }
+
+    override func cursorUpdate(with event: NSEvent) {
+        cursor.set()
+    }
+
     // MARK: - dynamische resolutie
 
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
         scheduleResize()
+        rebuildCursor()
     }
 
     private func scheduleResize() {
@@ -210,7 +269,7 @@ final class RDPView: NSView {
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let trackingArea { removeTrackingArea(trackingArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .activeInKeyWindow, .inVisibleRect],
+        let area = NSTrackingArea(rect: bounds, options: [.mouseMoved, .cursorUpdate, .activeInKeyWindow, .inVisibleRect],
                                   owner: self)
         addTrackingArea(area)
         trackingArea = area

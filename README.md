@@ -187,7 +187,6 @@ zoals het was. Als AI-besturing uit staat, kan de AI het klembord lezen noch zet
 - Het klembord deelt alleen tekst, geen afbeeldingen of bestanden.
 - Geen geluid, drive-redirectie of dynamische resolutie. Een groter
   venster schaalt het beeld, maar de remote resolutie blijft gelijk.
-- De muiscursor in het venster is de lokale systeemcursor; de cursorvorm van de server wordt niet overgenomen.
 - Zonder Unicode-ondersteuning op de server (Windows heeft die wel) kan
   `type_text` alleen letters, cijfers en spaties typen.
 
