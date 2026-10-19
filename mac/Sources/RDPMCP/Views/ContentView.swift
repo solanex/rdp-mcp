@@ -19,11 +19,12 @@ struct ContentView: View {
         .onChange(of: manager.focusMode) { _, focus in
             withAnimation { columns = focus ? .detailOnly : .all }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { _ in
-            manager.focusMode = true
+        // enkel het hoofdvenster; losgemaakte vensters regelen hun eigen volledig scherm
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willEnterFullScreenNotification)) { note in
+            if (note.object as? NSWindow)?.identifier != DetachedWindow.identifierValue { manager.focusMode = true }
         }
-        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { _ in
-            manager.focusMode = false
+        .onReceive(NotificationCenter.default.publisher(for: NSWindow.willExitFullScreenNotification)) { note in
+            if (note.object as? NSWindow)?.identifier != DetachedWindow.identifierValue { manager.focusMode = false }
         }
         .onReceive(NotificationCenter.default.publisher(for: .newHost)) { _ in
             editing = HostEntry()
@@ -53,10 +54,10 @@ struct SessionArea: View {
                 Divider()
             }
             ZStack {
-                if manager.sessions.isEmpty {
-                    EmptyState()
+                if manager.attachedSessions.isEmpty {
+                    EmptyState(hasDetached: !manager.sessions.isEmpty)
                 }
-                ForEach(manager.sessions) { session in
+                ForEach(manager.attachedSessions) { session in
                     SessionContainer(session: session, isActive: session.id == manager.selectedID)
                         .opacity(session.id == manager.selectedID ? 1 : 0)
                         .allowsHitTesting(session.id == manager.selectedID)
@@ -91,12 +92,14 @@ struct SessionArea: View {
 }
 
 private struct EmptyState: View {
+    var hasDetached = false
+
     var body: some View {
         VStack(spacing: 12) {
             Image(systemName: "display.2")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text("Geen open sessies")
+            Text(hasDetached ? "Alle sessies staan in een eigen venster" : "Geen open sessies")
                 .font(.title3)
             Text("Dubbelklik een host in het adresboek, of verbind snel via het veld bovenaan.")
                 .foregroundStyle(.secondary)
@@ -159,15 +162,29 @@ struct SessionContainer: View {
     }
 }
 
+/// Plaatst de (enige) RDPView van een sessie in een eigen container. Bij het verhuizen
+/// naar een ander venster neemt de nieuwe container de view over; de oude ruimt enkel
+/// op wat nog van hem is, zodat hij de view niet uit het nieuwe venster haalt.
 struct RDPViewRepresentable: NSViewRepresentable {
     let session: RDPSession
     let isActive: Bool
 
-    func makeNSView(context: Context) -> RDPView {
-        session.view
+    func makeNSView(context: Context) -> NSView {
+        let container = NSView()
+        let view = session.view
+        view.removeFromSuperview()
+        view.frame = container.bounds
+        view.autoresizingMask = [.width, .height]
+        container.addSubview(view)
+        return container
     }
 
-    func updateNSView(_ view: RDPView, context: Context) {
-        if view.isActive != isActive { view.isActive = isActive }
+    func updateNSView(_ container: NSView, context: Context) {
+        let view = session.view
+        if view.superview === container, view.isActive != isActive { view.isActive = isActive }
+    }
+
+    static func dismantleNSView(_ container: NSView, coordinator: ()) {
+        for sub in container.subviews { sub.removeFromSuperview() }
     }
 }

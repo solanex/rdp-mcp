@@ -60,6 +60,11 @@ extern "C"
 		void (*ai_activity)(void* user, int x, int y);
 		/* Tekst gekopieerd in de remote sessie: op het lokale klembord zetten */
 		void (*remote_clipboard)(void* user, const char* text);
+		/* Zoals remote_clipboard, maar met tekst en/of afbeelding (CF_DIB: BITMAPINFOHEADER
+		 * + pixels, zonder BMP-bestandsheader). Als dit gezet is, wordt remote_clipboard
+		 * niet gebruikt. Beide mogen NULL zijn; de buffers zijn enkel geldig tijdens de oproep. */
+		void (*remote_clipboard_data)(void* user, const char* text, const uint8_t* dib,
+		                              size_t dib_len);
 		/* Muiscursor van de server: BGRA32 (niet voorvermenigvuldigd), w x h pixels met
 		 * hotspot. bgra = NULL en w = 0: cursor verbergen; bgra = NULL en w < 0: de
 		 * standaardcursor van het systeem. De buffer is enkel geldig tijdens de oproep. */
@@ -93,6 +98,9 @@ extern "C"
 		bool dynamic_resolution; /* remote resolutie volgt rdpmcp_request_resize */
 		bool clipboard;
 		bool ai_enabled;
+		bool sound;                     /* geluid van de remote sessie op de Mac afspelen */
+		const char* shared_folder_name; /* naam van de schijf in Windows, NULL = "Mac" */
+		const char* shared_folder_path; /* lokale map die als schijf gedeeld wordt, NULL = geen */
 	} rdpmcp_config;
 
 	/* Sessie op basis van een configuratie (Mac-app) */
@@ -139,6 +147,9 @@ extern "C"
 
 	/* Het lokale klembord veranderde (text = NULL: geen tekst) */
 	void rdpmcp_local_clipboard_changed(rdpmcp_session* s, const char* text);
+	/* Idem, met tekst en/of afbeelding (CF_DIB, zie remote_clipboard_data) */
+	void rdpmcp_local_clipboard_set(rdpmcp_session* s, const char* text, const uint8_t* dib,
+	                                size_t dib_len);
 
 	/* Vraag de server om deze resolutie (enkel met dynamic_resolution) */
 	void rdpmcp_request_resize(rdpmcp_session* s, uint32_t width, uint32_t height);

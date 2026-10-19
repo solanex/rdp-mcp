@@ -61,7 +61,13 @@ struct rdpmcp_session
 	char* clip_local_text;  /* lokaal klembord (UTF-8, LF) */
 	char* clip_remote_text; /* remote klembord (UTF-8, LF) */
 	char* clip_ai_text;     /* door de AI gezet (UTF-8, LF) */
-	bool clip_pending;      /* wachten op tekst van de server */
+	uint8_t* clip_local_dib;  /* lokale afbeelding (CF_DIB) */
+	size_t clip_local_dib_len;
+	uint8_t* clip_remote_dib; /* remote afbeelding (CF_DIB) */
+	size_t clip_remote_dib_len;
+	bool clip_pending;        /* wachten op gegevens van de server */
+	uint32_t clip_requested;  /* formaat van de lopende aanvraag, 0 = geen */
+	bool clip_want_dib;       /* na de tekst ook de afbeelding ophalen */
 
 	/* Control-socket */
 	char sock_path[PATH_MAX];

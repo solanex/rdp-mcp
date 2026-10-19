@@ -24,6 +24,8 @@ final class RDPSession: ObservableObject, Identifiable {
     @Published var aiEnabled: Bool
     @Published var remoteSize: CGSize = .zero
     @Published var notice: String?
+    /// Staat in een eigen venster in plaats van als tab
+    @Published var isDetached = false
 
     /// rdpmcp_session*; nil na close()
     private(set) var handle: OpaquePointer?
@@ -78,6 +80,9 @@ final class RDPSession: ObservableObject, Identifiable {
         config.dynamic_resolution = entry.isAutoSize
         config.clipboard = entry.clipboard
         config.ai_enabled = entry.aiEnabledAtStart
+        config.sound = entry.sound
+        config.shared_folder_name = c(entry.sharedFolderName)
+        config.shared_folder_path = c(entry.sharedFolderPath)
 
         let retained = Unmanaged.passRetained(self)
         var cb = rdpmcp_callbacks()
@@ -95,11 +100,13 @@ final class RDPSession: ObservableObject, Identifiable {
             let s = RDPSession.from(user)
             DispatchQueue.main.async { s.view.flashAI(x: Int(x), y: Int(y)) }
         }
-        cb.remote_clipboard = { user, text in
-            guard let text else { return }
+        cb.remote_clipboard_data = { user, text, dib, dibLen in
             let s = RDPSession.from(user)
-            let value = String(cString: text)
-            DispatchQueue.main.async { SessionManager.setPasteboard(value, from: s) }
+            let value = text.map { String(cString: $0) }
+            let image = dib.map { Data(bytes: $0, count: dibLen) }
+            DispatchQueue.main.async {
+                SessionManager.setPasteboard(text: value, image: image.flatMap(ClipboardImage.image(fromDIB:)), from: s)
+            }
         }
         cb.pointer = { user, bgra, w, h, hotX, hotY in
             let s = RDPSession.from(user)
@@ -176,13 +183,16 @@ final class RDPSession: ObservableObject, Identifiable {
         show(notice: enabled ? "AI-besturing aan" : "AI-besturing uit")
     }
 
-    func localClipboardChanged(_ text: String?) {
+    func localClipboardChanged(text: String?, dib: Data?) {
         guard let h = handle else { return }
-        if let text {
-            text.withCString { rdpmcp_local_clipboard_changed(h, $0) }
-        } else {
-            rdpmcp_local_clipboard_changed(h, nil)
+        func send(_ t: UnsafePointer<CChar>?) {
+            if let dib {
+                dib.withUnsafeBytes { rdpmcp_local_clipboard_set(h, t, $0.bindMemory(to: UInt8.self).baseAddress, dib.count) }
+            } else {
+                rdpmcp_local_clipboard_set(h, t, nil, 0)
+            }
         }
+        if let text { text.withCString { send($0) } } else { send(nil) }
     }
 
     func show(notice text: String) {

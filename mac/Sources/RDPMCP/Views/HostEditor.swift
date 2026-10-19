@@ -48,6 +48,34 @@ struct HostEditor: View {
                         .foregroundStyle(missingPassword ? .red : .secondary)
                 }
 
+                Section {
+                    Toggle("Geluid op de Mac afspelen", isOn: $entry.sound)
+                    LabeledContent("Gedeelde map") {
+                        HStack {
+                            Text(entry.sharedFolderPath.isEmpty ? "geen"
+                                 : (entry.sharedFolderPath as NSString).abbreviatingWithTildeInPath)
+                                .foregroundStyle(entry.sharedFolderPath.isEmpty ? .secondary : .primary)
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                            Button("Kies…", action: chooseFolder)
+                            if !entry.sharedFolderPath.isEmpty {
+                                Button("Geen") { entry.sharedFolderPath = "" }
+                            }
+                        }
+                    }
+                    if !entry.sharedFolderPath.isEmpty {
+                        TextField("Naam in Windows", text: $entry.sharedFolderName, prompt: Text("Mac"))
+                    }
+                } header: {
+                    Text("Delen")
+                } footer: {
+                    if !entry.sharedFolderPath.isEmpty {
+                        Text("De map verschijnt in Windows onder Deze pc. Let op: met AI-besturing aan kan de AI via de Verkenner ook bij de bestanden in deze map.")
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                    }
+                }
+
                 Section("Scherm en invoer") {
                     Picker("Resolutie", selection: Binding(
                         get: { "\(entry.width)x\(entry.height)" },
@@ -93,7 +121,19 @@ struct HostEditor: View {
             }
             .padding()
         }
-        .frame(width: 480, height: 640)
+        .frame(width: 500, height: 720)
+    }
+
+    private func chooseFolder() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Delen"
+        panel.message = "Kies de map die in Windows als schijf verschijnt"
+        if panel.runModal() == .OK, let url = panel.url {
+            entry.sharedFolderPath = url.path
+        }
     }
 
     /// Bewaren staat aan, maar er is nog geen wachtwoord bewaard of ingevuld
@@ -113,6 +153,13 @@ struct HostEditor: View {
 
     private func save() {
         entry.host = entry.host.trimmingCharacters(in: .whitespaces)
+        // de komma scheidt naam en pad in de FreeRDP-optie
+        entry.sharedFolderName = entry.sharedFolderName.replacingOccurrences(of: ",", with: " ")
+        if entry.sharedFolderName.trimmingCharacters(in: .whitespaces).isEmpty { entry.sharedFolderName = "Mac" }
+        if entry.sharedFolderPath.contains(",") {
+            error = "Het pad van de gedeelde map mag geen komma bevatten."
+            return
+        }
         do {
             if savePassword {
                 if !password.isEmpty {

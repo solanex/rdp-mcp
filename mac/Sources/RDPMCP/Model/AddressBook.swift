@@ -51,7 +51,12 @@ final class AddressBook: ObservableObject {
         do {
             entries = try JSONDecoder().decode([HostEntry].self, from: Data(contentsOf: url))
         } catch {
-            loadError = "Adresboek kon niet gelezen worden: \(error.localizedDescription)"
+            // reservekopie, zodat een volgende bewaring het origineel niet overschrijft
+            let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+            let backup = url.deletingPathExtension().appendingPathExtension("onleesbaar-\(stamp).json")
+            try? FileManager.default.copyItem(at: url, to: backup)
+            loadError = "Adresboek kon niet gelezen worden (\(error.localizedDescription)). "
+                + "Een kopie staat in \(backup.lastPathComponent)."
         }
     }
 

@@ -32,6 +32,10 @@ struct RDPMCPApp: App {
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
                 Button("Vorige tab") { manager.selectNext(-1) }
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
+                Button("Naar eigen venster") {
+                    if let s = manager.selected { manager.detach(s) }
+                }
+                .keyboardShortcut("d", modifiers: [.command, .option])
                 Divider()
                 Button("AI-besturing aan/uit") {
                     if let s = manager.selected { s.setAI(!s.aiEnabled) }

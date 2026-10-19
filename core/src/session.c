@@ -496,12 +496,33 @@ rdpmcp_session* rdpmcp_session_new(const rdpmcp_config* c, const rdpmcp_callback
 
 	/* Eerst de standaarden van de FreeRDP-opdrachtregel overnemen: zonder die stap staan
 	 * o.a. de grafische pipeline (GFX/H.264) en bureaubladcompositie uit, en valt FreeRDP
-	 * terug op trage bitmap-updates. */
+	 * terug op trage bitmap-updates. Geluid en gedeelde map gaan via dezelfde weg, want
+	 * de parser laadt ook de bijhorende kanalen. */
 	{
 		char program[] = "rdp-mcp";
 		char server[] = "/v:localhost";
-		char* argv[] = { program, server, NULL };
-		SET_OR_FAIL(freerdp_client_settings_parse_command_line(st, 2, argv, FALSE) == 0);
+		char sound[] = "/sound";
+		char* drive = NULL;
+		char* argv[5] = { program, server, NULL, NULL, NULL };
+		int argc = 2;
+		if (c->sound)
+			argv[argc++] = sound;
+		if (c->shared_folder_path && *c->shared_folder_path)
+		{
+			const char* name =
+			    (c->shared_folder_name && *c->shared_folder_name) ? c->shared_folder_name : "Mac";
+			if (strchr(name, ',') || strchr(c->shared_folder_path, ','))
+				goto fail; /* de komma scheidt naam en pad in de FreeRDP-optie */
+			const size_t len = strlen(name) + strlen(c->shared_folder_path) + 10;
+			drive = malloc(len);
+			if (!drive)
+				goto fail;
+			snprintf(drive, len, "/drive:%s,%s", name, c->shared_folder_path);
+			argv[argc++] = drive;
+		}
+		const int rc = freerdp_client_settings_parse_command_line(st, argc, argv, FALSE);
+		free(drive);
+		SET_OR_FAIL(rc == 0);
 	}
 
 	SET_OR_FAIL(freerdp_settings_set_string(st, FreeRDP_ServerHostname, c->host));

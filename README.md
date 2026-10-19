@@ -47,6 +47,13 @@ open "mac/build/RDP MCP.app"
   verbinden met ⌥⌘R.
 - **Volledig scherm** met ⌃⌘F of de knop rechts in de tabbalk. Zijbalk en tabbalk
   verdwijnen dan; beweeg de muis naar de bovenrand om de tabs te zien.
+- **Eigen venster:** met ⌥⌘D, het venstericoon in de statusbalk of het rechtsklikmenu
+  van een tab zet je een sessie in een eigen venster, bijvoorbeeld om ze op een tweede
+  scherm volledig scherm te zetten. Sluit je dat venster, dan komt de sessie terug als
+  tab; de verbinding blijft open.
+- **Geluid** van de sessie speelt af op de Mac (per host uit te zetten).
+- **Gedeelde map:** per host kies je een Mac-map die in Windows onder Deze pc
+  verschijnt. Met AI-besturing aan kan de AI via de Verkenner ook bij die bestanden.
 - **Dynamische resolutie:** met "Automatisch" volgt de Windows-resolutie de grootte
   van het tabblad, ook bij volledig scherm.
 - **Toetsenbord:** alles gaat naar Windows, ook Cmd-combinaties (Cmd = Ctrl, in te
@@ -157,7 +164,8 @@ naar de echte resolutie.
 
 ## Klembord
 
-Tekst wordt in beide richtingen gedeeld, zoals bij een gewone RDP-client. Kopieer je
+Tekst en afbeeldingen worden in beide richtingen gedeeld, zoals bij een gewone
+RDP-client. Afbeeldingen alleen in de Mac-app; de SDL-client deelt alleen tekst. Kopieer je
 op de Mac, dan plak je het remote met Cmd+V; kopieer je remote, dan staat het op het
 klembord van je Mac.
 
@@ -184,9 +192,11 @@ zoals het was. Als AI-besturing uit staat, kan de AI het klembord lezen noch zet
 
 ## Beperkingen (v0.1)
 
-- Het klembord deelt alleen tekst, geen afbeeldingen of bestanden.
-- Geen geluid, drive-redirectie of dynamische resolutie. Een groter
-  venster schaalt het beeld, maar de remote resolutie blijft gelijk.
+- Bestanden kopiëren via het klembord kan niet; gebruik daarvoor de gedeelde map.
+- De AI kan alleen tekst van het klembord lezen, geen afbeeldingen.
+- Geen microfoon.
+- In de SDL-client volgt de remote resolutie de venstergrootte niet; een groter
+  venster schaalt het beeld. De Mac-app doet dat wel (resolutie "Automatisch").
 - Zonder Unicode-ondersteuning op de server (Windows heeft die wel) kan
   `type_text` alleen letters, cijfers en spaties typen.
 
