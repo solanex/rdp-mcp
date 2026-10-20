@@ -1,203 +1,204 @@
 # rdp-mcp
 
-Een RDP-client voor de Mac waarin een AI-agent (zoals Claude) via MCP mee kan kijken
-en de muis en het toetsenbord kan bedienen. Jij kijkt live mee in een gewoon venster
-en kunt op elk moment zelf ingrijpen.
+An RDP client for the Mac that lets an AI agent (such as Claude) see the remote
+screen and drive the mouse and keyboard over MCP. You watch live in a normal window
+and can take over at any moment.
 
-Voor de meeste mensen volstaan twee stappen: de Mac-app installeren en de MCP-server
-één keer bij Claude registreren. De losse SDL-client onderaan is een extra voor tests
-en Linux; die heb je niet nodig.
+Most people need two steps: install the Mac app and register the MCP server with
+Claude once. The standalone SDL client further down is an extra for testing and
+Linux; you don't need it.
 
-## Installeren
+## Install
 
-Je hebt [Homebrew](https://brew.sh) en de Xcode Command Line Tools nodig
+You need [Homebrew](https://brew.sh) and the Xcode Command Line Tools
 (`xcode-select --install`).
 
 ```sh
 brew install freerdp uv
 git clone https://github.com/solanex/rdp-mcp.git ~/Projects/rdp-mcp
 cd ~/Projects/rdp-mcp
-./mac/build-app.sh            # maakt mac/build/RDP MCP.app
+./mac/build-app.sh            # builds mac/build/RDP MCP.app
 open "mac/build/RDP MCP.app"
 ```
 
-Je mag de app naar `/Applications` slepen. Zonder Claude werkt ze ook gewoon als
-RDP-client.
+You can drag the app to `/Applications`. It also works as a plain RDP client
+without Claude.
 
-## Claude koppelen
+## Connect Claude
 
-Dit hoeft maar één keer. Voor Claude Code:
+You only do this once. For Claude Code:
 
 ```sh
 claude mcp add rdp -s user -e RDP_MCP_LAYOUT=be -- uv run --directory ~/Projects/rdp-mcp/mcp rdp-mcp
 ```
 
-Voor Claude Desktop zet je dit in `claude_desktop_config.json`:
+For Claude Desktop, add this to `claude_desktop_config.json`:
 
 ```json
 {
   "mcpServers": {
     "rdp": {
       "command": "uv",
-      "args": ["run", "--directory", "/Users/<jij>/Projects/rdp-mcp/mcp", "rdp-mcp"],
+      "args": ["run", "--directory", "/Users/<you>/Projects/rdp-mcp/mcp", "rdp-mcp"],
       "env": { "RDP_MCP_LAYOUT": "be" }
     }
   }
 }
 ```
 
-Clonede je de repo ergens anders, pas dan het pad aan. `uv` installeert de
-Python-afhankelijkheden zelf bij de eerste start.
+If you cloned the repo somewhere else, adjust the path. Use `RDP_MCP_LAYOUT=us` if
+the remote session uses a QWERTY layout. `uv` installs the Python dependencies by
+itself on first start.
 
-## Gebruik
+## Usage
 
-1. Voeg in de app een host toe aan het adresboek en verbind.
-2. Zet **AI-besturing** aan voor die tab: de schakelaar in de statusbalk, ⌥⌘A, of
-   ⌃⌥⇧A in de sessie.
-3. Vraag Claude iets, bijvoorbeeld "open in PC01 Kladblok en typ een testzin".
-   In de MCP-tools heet een sessie zoals in het adresboek.
+1. Add a host to the address book in the app and connect.
+2. Turn on **AI control** for that tab: the switch in the status bar, ⌥⌘A, or
+   ⌃⌥⇧A inside the session.
+3. Ask Claude something, for example "open Notepad in PC01 and type a test
+   sentence". In the MCP tools a session has the same name as in the address book.
 
-Elke AI-actie laat het beeld even oranje oplichten en zet een kruisje waar de AI de
-muis neerzette. Je eigen muis en toetsenbord blijven altijd werken. Staat
-AI-besturing uit, dan kan de AI nog screenshots nemen, maar elke muis- of toetsactie
-wordt geweigerd.
+Every AI action briefly outlines the screen in orange and puts a crosshair where the
+AI placed the mouse. Your own mouse and keyboard always keep working. With AI
+control off, the AI can still take screenshots, but every mouse or keyboard action
+is refused.
 
-## Wat de app kan
+## What the app does
 
-- **Adresboek** in de zijbalk, met groepen. Naam, host, poort, gebruiker, domein,
-  gateway, resolutie, toetsenbord en opties staan in
-  `~/Library/Application Support/rdp-mcp/hosts.json`. Wachtwoorden staan daar nooit in.
-- **Wachtwoorden** gaan naar je login-sleutelhanger. Optioneel vraagt de app Touch ID
-  of je Mac-wachtwoord voor ze gebruikt worden. Dat is een controle in de app zelf:
-  voor een harde sleutelhangerregel moet de app ondertekend zijn met een Apple
-  Developer-account. Omdat de app ad-hoc ondertekend is, vraagt macOS na elke nieuwe
-  build één keer of ze bij de sleutelhanger mag.
-- **Tabs:** één tab per sessie. Wisselen met ⌥⌘← / ⌥⌘→, sluiten met ⌥⌘W, opnieuw
-  verbinden met ⌥⌘R.
-- **Volledig scherm** met ⌃⌘F of de knop rechts in de tabbalk. Zijbalk en tabbalk
-  verdwijnen dan; beweeg de muis naar de bovenrand om de tabs te zien.
-- **Eigen venster:** met ⌥⌘D, het venstericoon in de statusbalk of het rechtsklikmenu
-  van een tab zet je een sessie in een eigen venster, bijvoorbeeld voor een tweede
-  scherm. Sluit je dat venster, dan komt de sessie terug als tab; de verbinding
-  blijft open.
-- **Geluid** van de sessie speelt af op de Mac (per host uit te zetten).
-- **Gedeelde map:** per host kies je een Mac-map die in Windows onder Deze pc
-  verschijnt. Met AI-besturing aan kan de AI via de Verkenner ook bij die bestanden.
-- **Dynamische resolutie:** met "Automatisch" volgt de Windows-resolutie de grootte
-  van het tabblad, ook bij volledig scherm.
-- **Toetsenbord:** alles gaat naar Windows, ook Cmd-combinaties (Cmd = Ctrl, in te
-  stellen in Instellingen). Alleen ⌥⌘-combinaties, ⌃⌘F en ⌘Q blijven op de Mac.
+- **Address book** in the sidebar, with groups. Name, host, port, user, domain,
+  gateway, resolution, keyboard and options are stored in
+  `~/Library/Application Support/rdp-mcp/hosts.json`. Passwords are never stored there.
+- **Passwords** go to your login keychain. Optionally the app asks for Touch ID or
+  your Mac password before using them. That check happens in the app itself: a hard
+  keychain rule would require signing the app with an Apple Developer account.
+  Because the app is ad-hoc signed, macOS asks once after every new build whether it
+  may access the keychain.
+- **Tabs:** one tab per session. Switch with ⌥⌘← / ⌥⌘→, close with ⌥⌘W, reconnect
+  with ⌥⌘R.
+- **Full screen** with ⌃⌘F or the button on the right of the tab bar. The sidebar and
+  tab bar disappear; move the mouse to the top edge to see the tabs.
+- **Separate window:** ⌥⌘D, the window icon in the status bar or a tab's context menu
+  moves a session into its own window, for example for a second display. Close that
+  window and the session returns as a tab; the connection stays open.
+- **Sound** from the session plays on the Mac (can be turned off per host).
+- **Shared folder:** per host you pick a Mac folder that shows up in Windows under
+  This PC. With AI control on, the AI can reach those files through Explorer too.
+- **Dynamic resolution:** with "Automatisch" (automatic) the Windows resolution
+  follows the size of the tab, also in full screen.
+- **Keyboard:** everything goes to Windows, including Cmd combinations (Cmd = Ctrl,
+  configurable in Settings). Only ⌥⌘ combinations, ⌃⌘F and ⌘Q stay on the Mac.
 
-## Klembord
+## Clipboard
 
-Tekst en afbeeldingen gaan in beide richtingen, zoals bij een gewone RDP-client.
-Kopieer je op de Mac, dan plak je remote met Cmd+V; kopieer je remote, dan staat het
-op het klembord van je Mac.
+Text and images go both ways, as with any RDP client. Copy on the Mac and paste
+remotely with Cmd+V; copy remotely and it is on your Mac clipboard.
 
-Voor de AI gelden twee regels:
+Two rules apply to the AI:
 
-- **De AI leest je Mac-klembord nooit.** `get_clipboard` geeft alleen tekst terug die
-  in de remote sessie gekopieerd werd of die de AI zelf zette. Zolang het klembord
-  iets bevat dat jij op de Mac kopieerde, krijgt de AI een weigering.
-- **De AI kan je Mac-klembord niet remote plakken.** Drukt de AI zelf Ctrl+V terwijl
-  je Mac-inhoud actief is, dan geeft de app die inhoud niet door. Plak jij zelf, dan
-  werkt het gewoon. De app beslist dat op basis van wie de laatste toets of klik gaf.
+- **The AI never reads your Mac clipboard.** `get_clipboard` only returns text that
+  was copied in the remote session or that the AI set itself. As long as the
+  clipboard holds something you copied on the Mac, the AI gets a refusal.
+- **The AI cannot paste your Mac clipboard remotely.** If the AI presses Ctrl+V while
+  Mac content is active, the app does not pass that content on. If you paste
+  yourself, it just works. The app decides based on who gave the last key press or
+  click.
 
-`set_clipboard` verandert alleen het remote klembord; het klembord van je Mac blijft
-zoals het was. Als AI-besturing uit staat, kan de AI het klembord lezen noch zetten.
+`set_clipboard` only changes the remote clipboard; your Mac clipboard stays as it
+was. With AI control off, the AI can neither read nor set the clipboard.
 
-## Beveiliging
+## Security
 
-- Wachtwoorden en certificaatvragen lopen via de app. De MCP-server en de AI krijgen
-  ze nooit te zien.
-- Elke sessie heeft een socket in `~/.rdp-mcp/` met rechten `0700`/`0600`. Alleen
-  jouw eigen gebruiker kan erbij, en er gaat niets over het netwerk.
-- Wie die socket kan openen, kan de sessie besturen. Gebruik dus een account met niet
-  meer rechten dan nodig.
+- Passwords and certificate prompts go through the app. The MCP server and the AI
+  never see them.
+- Each session has a socket in `~/.rdp-mcp/` with permissions `0700`/`0600`. Only
+  your own user can reach it, and nothing goes over the network.
+- Anyone who can open that socket can control the session. Use an account with no
+  more rights than needed.
 
-## MCP-tools
+## MCP tools
 
-| tool | wat |
+| tool | what |
 |---|---|
-| `list_rdp_sessions` | actieve sessies (naam, resolutie, AI aan/uit) |
-| `screenshot` | afbeelding van het remote scherm, verkleind tot max. 1280 px |
-| `click` | klikken (links/rechts/midden, dubbelklik met `clicks=2`) |
-| `move_mouse` | muis verplaatsen (hover) |
-| `drag` | slepen van A naar B |
-| `scroll` | muiswiel op/neer/links/rechts |
-| `get_clipboard` | tekst op het remote klembord lezen, bv. na `ctrl+c` |
-| `set_clipboard` | tekst op het remote klembord zetten, daarna plakken met `ctrl+v` |
-| `type_text` | tekst typen via Unicode, dus onafhankelijk van de toetsenbordindeling |
-| `press_keys` | sneltoetsen, bv. `ctrl+c`, `win+r`, `alt+f4`, `ctrl+alt+delete`, `tab tab enter` |
-| `wait` | even wachten tot iets geladen is |
+| `list_rdp_sessions` | active sessions (name, resolution, AI on/off) |
+| `screenshot` | image of the remote screen, scaled down to max. 1280 px |
+| `click` | click (left/right/middle, double-click with `clicks=2`) |
+| `move_mouse` | move the mouse (hover) |
+| `drag` | drag from A to B |
+| `scroll` | mouse wheel up/down/left/right |
+| `get_clipboard` | read text on the remote clipboard, e.g. after `ctrl+c` |
+| `set_clipboard` | put text on the remote clipboard, then paste with `ctrl+v` |
+| `type_text` | type text via Unicode, independent of the keyboard layout |
+| `press_keys` | shortcuts, e.g. `ctrl+c`, `win+r`, `alt+f4`, `ctrl+alt+delete`, `tab tab enter` |
+| `wait` | wait a moment for something to load |
 
-Coördinaten zijn altijd pixels in de laatste screenshot. De MCP-server rekent ze om
-naar de echte resolutie.
+Coordinates are always pixels in the latest screenshot. The MCP server converts them
+to the real resolution.
 
-### Instellingen
+### Settings
 
-Omgevingsvariabelen van de MCP-server, mee te geven met `-e` bij `claude mcp add`
-of onder `env` in Claude Desktop:
+Environment variables of the MCP server, passed with `-e` to `claude mcp add` or
+under `env` in Claude Desktop:
 
-| variabele | standaard | betekenis |
+| variable | default | meaning |
 |---|---|---|
-| `RDP_MCP_LAYOUT` | `be` | indeling van de remote sessie voor letters in sneltoetsen (`be` = azerty, `us` = qwerty) |
-| `RDP_MCP_MAX_EDGE` | `1280` | langste zijde van screenshots in pixels |
-| `RDP_MCP_IMAGE_FORMAT` | `png` | `png` of `jpeg` (kleiner, minder scherp) |
-| `RDP_MCP_SETTLE` | `0.4` | seconden die een screenshot minstens wacht na de laatste actie |
-| `RDP_MCP_DIR` | `~/.rdp-mcp` | map met de sockets |
+| `RDP_MCP_LAYOUT` | `be` | layout of the remote session, used for letters in shortcuts (`be` = AZERTY, `us` = QWERTY) |
+| `RDP_MCP_MAX_EDGE` | `1280` | longest side of screenshots in pixels |
+| `RDP_MCP_IMAGE_FORMAT` | `png` | `png` or `jpeg` (smaller, less sharp) |
+| `RDP_MCP_SETTLE` | `0.4` | minimum seconds a screenshot waits after the last action |
+| `RDP_MCP_DIR` | `~/.rdp-mcp` | directory with the sockets |
 
-## Beperkingen
+## Limitations
 
-- Bestanden kopiëren via het klembord kan niet; gebruik daarvoor de gedeelde map.
-- De AI kan alleen tekst van het klembord lezen, geen afbeeldingen.
-- Geen microfoon.
-- Zonder Unicode-ondersteuning op de server (Windows heeft die wel) kan
-  `type_text` alleen letters, cijfers en spaties typen.
+- Copying files through the clipboard is not supported; use the shared folder.
+- The AI can only read text from the clipboard, not images.
+- No microphone.
+- Without Unicode support on the server (Windows has it), `type_text` can only type
+  letters, digits and spaces.
 
-## Extra: de SDL-client
+## Extra: the SDL client
 
-Naast de Mac-app is er een eenvoudige client voor één sessie, gebouwd met SDL3 en de
-gewone FreeRDP-opties. Hij is handig voor tests en werkt ook op Linux. De
-MCP-koppeling hierboven werkt er op dezelfde manier mee.
+Besides the Mac app there is a simple single-session client built with SDL3 and the
+usual FreeRDP options. It is handy for testing and also runs on Linux. The MCP setup
+above works with it in the same way.
 
 ```sh
 brew install freerdp cmake
 cd client
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-cmake --install build --prefix ~/.local   # zet rdp-mcp-client in ~/.local/bin
+cmake --install build --prefix ~/.local   # puts rdp-mcp-client in ~/.local/bin
 ```
 
-Op Linux heb je de ontwikkelpakketten van FreeRDP 3 en SDL3 nodig.
+On Linux you need the development packages of FreeRDP 3 and SDL3.
 
 ```sh
-rdp-mcp-client /v:server.voorbeeld.be /u:jan /d:VOORBEELD /kbd:layout:0x80C
+rdp-mcp-client /v:server.example.com /u:jane /d:EXAMPLE /kbd:layout:0x80C
 ```
 
-Het wachtwoord vraagt hij in de terminal. Na het verbinden opent het venster en
-verschijnt `MCP-control-socket: ~/.rdp-mcp/<pid>-1.sock`. De venstertitel toont of
-AI-besturing aan of uit staat; Ctrl+Alt+Shift+A (op de Mac Ctrl+Option+Shift+A)
-schakelt ze om.
+It asks for the password in the terminal. After connecting, the window opens and it
+prints `MCP-control-socket: ~/.rdp-mcp/<pid>-1.sock`. The window title shows whether
+AI control is on or off; Ctrl+Alt+Shift+A (Ctrl+Option+Shift+A on the Mac) toggles
+it.
 
-Handige opties:
+Useful options:
 
-- `/size:1920x1080`: resolutie van de remote sessie
-- `/kbd:layout:0x80C`: Belgisch (azerty) toetsenbord op de server
-- `/cert:tofu` of `/cert:ignore`: certificaat de eerste keer vertrouwen of niet controleren
-- `/g:gateway.example.be`: via RD Gateway
-- `--ai-off`: start met AI-besturing uitgeschakeld
-- `--cmd-as-win`: de Mac-Cmd-toets wordt de Windows-toets (standaard is Cmd = Ctrl)
-- `--no-clipboard`: het klembord helemaal niet delen, ook niet met de AI
+- `/size:1920x1080`: resolution of the remote session
+- `/kbd:layout:0x80C`: Belgian (AZERTY) keyboard on the server (`0x409` for US)
+- `/cert:tofu` or `/cert:ignore`: trust the certificate the first time, or don't check it
+- `/g:gateway.example.com`: connect through an RD Gateway
+- `--ai-off`: start with AI control disabled
+- `--cmd-as-win`: the Mac Cmd key becomes the Windows key (default is Cmd = Ctrl)
+- `--no-clipboard`: don't share the clipboard at all, not even with the AI
 
-`rdp-mcp-client /help` toont alle opties.
+`rdp-mcp-client /help` lists all options.
 
-Verschillen met de Mac-app: de SDL-client deelt alleen tekst via het klembord, en de
-remote resolutie volgt de venstergrootte niet (een groter venster schaalt het beeld).
+Differences from the Mac app: the SDL client only shares text through the clipboard,
+and the remote resolution does not follow the window size (a bigger window scales
+the image).
 
-### Testen zonder Windows
+### Testing without Windows
 
-FreeRDP levert een voorbeeldserver mee met een testbeeld:
+FreeRDP ships a sample server with a test image:
 
 ```sh
 openssl req -x509 -newkey rsa:2048 -nodes -keyout /tmp/s.key -out /tmp/s.crt -days 7 -subj /CN=localhost
@@ -206,25 +207,26 @@ sfreerdp-server --port=33890 --cert=/tmp/s.crt --key=/tmp/s.key
 rdp-mcp-client /v:127.0.0.1:33890 /cert:ignore /sec:tls /u:test /p:test
 ```
 
-Deze testserver luistert op alle netwerkinterfaces en ondersteunt geen Unicode-invoer.
+This test server listens on all network interfaces and does not support Unicode
+input.
 
-## Opbouw van de repo
+## Repository layout
 
 ```
-┌──────────────────────┐  Unix-socket    ┌──────────────┐   stdio/MCP   ┌──────────────┐
+┌──────────────────────┐  Unix socket    ┌──────────────┐   stdio/MCP   ┌──────────────┐
 │  RDP MCP.app (tabs)  │ ◄─────────────► │  rdp-mcp     │ ◄───────────► │ Claude Code  │
-│  of rdp-mcp-client   │  ~/.rdp-mcp/    │  (Python)    │               │ / Desktop    │
-│  venster voor jou    │  <pid>-<n>.sock │  MCP-server  │               │              │
-└──────────┬───────────┘  (per sessie)   └──────────────┘               └──────────────┘
+│  or rdp-mcp-client   │  ~/.rdp-mcp/    │  (Python)    │               │ / Desktop    │
+│  window for you      │  <pid>-<n>.sock │  MCP server  │               │              │
+└──────────┬───────────┘  (per session)  └──────────────┘               └──────────────┘
            │ RDP
            ▼
-     Windows-machines
+     Windows machines
 ```
 
-- `mac/`: de Mac-app.
-- `core/`: de gedeelde C-kern op basis van libfreerdp3. Ze beheert sessies, beeld,
-  invoer, klembord en de control-socket per sessie.
-- `mcp/`: de MCP-server die met de sockets praat.
-- `client/`: de SDL-client.
+- `mac/`: the Mac app.
+- `core/`: the shared C core on top of libfreerdp3. It manages sessions, display,
+  input, clipboard and the control socket per session.
+- `mcp/`: the MCP server that talks to the sockets.
+- `client/`: the SDL client.
 
-Het socketprotocol staat in [PROTOCOL.md](PROTOCOL.md).
+The socket protocol is described in [PROTOCOL.md](PROTOCOL.md).
