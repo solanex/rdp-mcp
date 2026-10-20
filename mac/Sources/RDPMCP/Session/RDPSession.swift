@@ -349,7 +349,8 @@ final class RDPSession: ObservableObject, Identifiable {
                          width: Int, height: Int) -> Bool {
         guard entry.confirmPowerActions else { return true }
         guard let image = PowerGuard.image(bgrx: bgrx, width: width, height: height) else { return false }
-        let action: PowerGuard.Action = kind == RDPMCP_GUARD_CLICK ? .click(x: x, y: y) : .key
+        let action: PowerGuard.Action = kind == RDPMCP_GUARD_CLICK ? .click(x: x, y: y)
+            : .key(enter: kind == RDPMCP_GUARD_KEY)
         guard let finding = PowerGuard.check(action, image: image, cache: screenCache) else { return true }
         // de MCP-server legde dit commando net voor en de gebruiker stond het toe
         if let reason = finding.commandReason, wasJustAllowed(reason) { return true }
@@ -361,7 +362,7 @@ final class RDPSession: ObservableObject, Identifiable {
     func guardText(_ text: String) -> Bool {
         guard entry.confirmPowerActions, let reason = CommandGuard.check(text) else { return true }
         let shown = text.count > 300 ? String(text.prefix(300)) + "…" : text
-        let allowed = confirm(.key, finding: PowerGuard.Finding(text: shown, box: nil, commandReason: reason), image: nil)
+        let allowed = confirm(.key(enter: true), finding: PowerGuard.Finding(text: shown, box: nil, commandReason: reason), image: nil)
         if allowed {
             promptLock.lock()
             allowedCommand = (reason, Date())

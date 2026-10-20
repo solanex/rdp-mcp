@@ -12,7 +12,8 @@ enum PowerGuard {
     /// Wat de AI wil doen
     enum Action {
         case click(x: Int, y: Int)
-        case key
+        /// Enter (of spatie: enter = false). Een spatie voert geen commando uit.
+        case key(enter: Bool)
     }
 
     struct Finding {
@@ -50,13 +51,13 @@ enum PowerGuard {
         }).count >= 2
 
         switch action {
-        case .key:
+        case .key(let enter):
             // Enter of spatie bevestigt het geselecteerde item van een open menu of venster
             if let dialog { return Finding(text: dialog.original, box: dialog.box) }
             if powerVisible { return Finding(text: String(localized: "power menu"), box: nil) }
             // Enter voert ook het commando uit dat in een console of in Uitvoeren staat,
             // ook als het uit de geschiedenis of het klembord kwam
-            return commandFinding(lines, image: image)
+            return enter ? commandFinding(lines, image: image) : nil
 
         case .click(let x, let y):
             let point = CGPoint(x: x, y: y)
@@ -103,14 +104,27 @@ enum PowerGuard {
             let reread = reread(candidate, in: image)
             if let line = reread.first(where: { matchesPrompt($0.original) }) {
                 let command = commandText(line.original)
-                return CommandGuard.check(command).map { Finding(text: command, box: line.box, commandReason: $0) }
+                if let reason = CommandGuard.check(command) {
+                    return Finding(text: command, box: line.box, commandReason: reason)
+                }
+                // Niet stoppen: een console op de achtergrond met een lege prompt mag
+                // het venster Uitvoeren ervoor niet verbergen
+                break
             }
         }
         // Uitvoeren: het invoerveld staat rechts van het label, op dezelfde hoogte
         for label in lines {
-            let letters = label.text.filter { $0.isLetter }
+            // soms leest Vision label en veld als één regel: "Openen: shutdown /r"
+            let head = label.text.split(separator: ":", maxSplits: 1).map(String.init)
+            let letters = (head.first ?? "").filter { $0.isLetter }
             guard letters.count <= 7, runLabels.contains(where: { $0 == letters || ($0.count >= 6 && distance(letters, $0) <= 1) })
             else { continue }
+            if head.count == 2, let colon = label.original.firstIndex(of: ":") {
+                let rest = label.original[label.original.index(after: colon)...].trimmingCharacters(in: .whitespaces)
+                if let reason = CommandGuard.check(rest) {
+                    return Finding(text: rest, box: label.box, commandReason: reason)
+                }
+            }
             let fields = lines.filter { $0.box.minX > label.box.maxX && abs($0.box.midY - label.box.midY) < label.box.height }
             for field in fields {
                 for line in reread(field, in: image) + [field] where line.box.minX > label.box.maxX - 4 {

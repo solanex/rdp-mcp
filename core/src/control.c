@@ -376,7 +376,8 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 		const unsigned bit = key_bit(code);
 		if (bit && down)
 		{
-			if (!guard_allows(s, fd, RDPMCP_GUARD_KEY, -1, -1))
+			const rdpmcp_guard_kind kind = code == 0x39 ? RDPMCP_GUARD_SPACE : RDPMCP_GUARD_KEY;
+			if (!guard_allows(s, fd, kind, -1, -1))
 			{
 				atomic_fetch_or(&s->ai_refused, bit);
 				return reply_refused(fd);
@@ -399,8 +400,9 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 			return reply(fd, "ERR syntax UNICODE <utf16-codeunit-hex>");
 		if (!freerdp_settings_get_bool(s->common.context.settings, FreeRDP_UnicodeInput))
 			return reply(fd, "ERR unicode-unsupported the server does not support Unicode input");
-		if ((code == '\r' || code == '\n' || code == ' ') &&
-		    !guard_allows(s, fd, RDPMCP_GUARD_KEY, -1, -1))
+		if ((code == '\r' || code == '\n') && !guard_allows(s, fd, RDPMCP_GUARD_KEY, -1, -1))
+			return reply_refused(fd);
+		if (code == ' ' && !guard_allows(s, fd, RDPMCP_GUARD_SPACE, -1, -1))
 			return reply_refused(fd);
 		pthread_mutex_lock(&s->input_lock);
 		freerdp_input_send_unicode_keyboard_event(s->common.context.input, 0, (UINT16)code);

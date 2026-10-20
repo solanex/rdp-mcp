@@ -50,7 +50,8 @@ extern "C"
 	typedef enum
 	{
 		RDPMCP_GUARD_CLICK = 0, /* muisknop indrukken of loslaten op (x, y) */
-		RDPMCP_GUARD_KEY = 1    /* Enter of spatie; x = y = -1 */
+		RDPMCP_GUARD_KEY = 1,   /* Enter; x = y = -1 */
+		RDPMCP_GUARD_SPACE = 2  /* spatie: activeert een knop of menu-item; x = y = -1 */
 	} rdpmcp_guard_kind;
 
 	typedef struct
