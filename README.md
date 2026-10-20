@@ -1,8 +1,9 @@
 # rdp-mcp
 
 An RDP client for the Mac that lets an AI agent (such as Claude) see the remote
-screen and drive the mouse and keyboard over MCP. You watch live in a normal window
-and can take over at any moment.
+screen and drive the mouse and keyboard over MCP. Claude can also open hosts from the
+app's address book itself; the app signs in, so Claude never sees a password. You
+watch live in a normal window and can take over at any moment.
 
 Most people need two steps: install the Mac app and register the MCP server with
 Claude once. The standalone SDL client further down is an extra for testing and
@@ -52,7 +53,8 @@ itself on first start.
 
 ## Usage
 
-1. Add a host to the address book in the app and connect.
+1. Add a host to the address book in the app and connect (or let Claude open it,
+   see below).
 2. Turn on **AI control** for that tab: the switch in the status bar, ⌥⌘A, or
    ⌃⌥⇧A inside the session.
 3. Ask Claude something, for example "open Notepad in PC01 and type a test
@@ -173,7 +175,8 @@ under `env` in Claude Desktop:
 
 Besides the Mac app there is a simple single-session client built with SDL3 and the
 usual FreeRDP options. It is handy for testing and also runs on Linux. The MCP setup
-above works with it in the same way.
+above works with it in the same way, except `list_hosts`, `open_session` and
+`close_session`: those need the Mac app and its address book.
 
 ```sh
 brew install freerdp cmake
@@ -227,23 +230,28 @@ input.
 ## Repository layout
 
 ```
-┌──────────────────────┐  Unix socket    ┌──────────────┐   stdio/MCP   ┌──────────────┐
+┌──────────────────────┐  Unix sockets   ┌──────────────┐   stdio/MCP   ┌──────────────┐
 │  RDP MCP.app (tabs)  │ ◄─────────────► │  rdp-mcp     │ ◄───────────► │ Claude Code  │
 │  or rdp-mcp-client   │  ~/.rdp-mcp/    │  (Python)    │               │ / Desktop    │
 │  window for you      │  <pid>-<n>.sock │  MCP server  │               │              │
-└──────────┬───────────┘  (per session)  └──────────────┘               └──────────────┘
+│                      │  (per session)  │              │               │              │
+│                      │  app-<pid>.ctl  │              │               │              │
+│                      │  (address book) │              │               │              │
+└──────────┬───────────┘                 └──────────────┘               └──────────────┘
            │ RDP
            ▼
      Windows machines
 ```
 
-- `mac/`: the Mac app.
+- `mac/`: the Mac app, including the app socket for the address book
+  (`AppControl.swift`).
 - `core/`: the shared C core on top of libfreerdp3. It manages sessions, display,
   input, clipboard and the control socket per session.
-- `mcp/`: the MCP server that talks to the sockets.
+- `mcp/`: the MCP server that talks to the sockets; `keys.py` holds the keyboard
+  layouts for shortcuts and `type_text`.
 - `client/`: the SDL client.
 
-The socket protocol is described in [PROTOCOL.md](PROTOCOL.md).
+Both socket protocols are described in [PROTOCOL.md](PROTOCOL.md).
 
 ## License
 
