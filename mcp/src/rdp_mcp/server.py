@@ -248,6 +248,9 @@ def type_text(text: str, session: str | None = None) -> str:
     """Type text into the focused field. Independent of the keyboard layout.
 
     A newline becomes Enter, a tab becomes Tab. Use press_keys for shortcuts.
+    Some windows ignore Unicode input, notably a console running as administrator:
+    if the text does not show up in the next screenshot, use set_clipboard and
+    press_keys('ctrl+v') instead.
     """
     s, info = _pick(session)
     if not info.unicode:
