@@ -230,3 +230,7 @@ input.
 - `client/`: the SDL client.
 
 The socket protocol is described in [PROTOCOL.md](PROTOCOL.md).
+
+## License
+
+MIT, see [LICENSE](LICENSE). FreeRDP, which this project links against, is licensed under Apache 2.0.
