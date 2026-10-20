@@ -260,6 +260,35 @@ def _find_host(hosts: list[dict], wanted: str) -> dict:
     raise ToolError(f"no host '{wanted}' in the address book. Available: {names}")
 
 
+def _wait_for_desktop(session_id: str, timeout: float = 20) -> bool:
+    """Wacht tot het scherm niet meer zwart is en even stilstaat.
+
+    Vlak na het verbinden herstelt Windows nog de sessie en is het scherm zwart;
+    toetsen die dan aankomen gaan verloren (Win+R opende niets).
+    """
+    path = next((s.path for s, i in list_sessions() if i.id == session_id), None)
+    if path is None:
+        return False
+    deadline = time.monotonic() + timeout
+    previous = None
+    with Session(path).connect() as conn:
+        while time.monotonic() < deadline:
+            try:
+                _, _, data = conn.screenshot()
+            except ClientError:
+                time.sleep(0.3)
+                continue
+            # elke 1031e pixel, enkel B, G en R (de vierde byte is opvulling)
+            sample = [max(data[i:i + 3]) for i in range(0, len(data) - 3, 4 * 1031)]
+            lit = sum(1 for v in sample if v > 24)
+            # de icoontjes op een zwart aanmeldscherm tellen niet mee
+            if lit > len(sample) * 0.02 and sample == previous:
+                return True
+            previous = sample
+            time.sleep(0.3)
+    return False
+
+
 @mcp.tool()
 def open_session(host: str, wait_seconds: float = 60) -> str:
     """Open a host from the address book (name, host name or id from list_hosts) in the app.
@@ -293,6 +322,8 @@ def open_session(host: str, wait_seconds: float = 60) -> str:
     if state == "connected":
         ai = next((i.ai_enabled for _, i in list_sessions() if i.id == sid), None)
         note = "" if ai is not False else " AI control is OFF for this host; ask the user to turn it on."
+        if new and not _wait_for_desktop(sid):
+            note += " The screen has not settled yet (still black or changing); take a screenshot before typing."
         opened = "Opened" if new else "Already open:"
         return f"{opened} session {sid} '{name}', connected. Use session='{sid}' or '{name}'.{note}"
     if state in ("failed", "disconnected"):
