@@ -138,7 +138,7 @@ was. With AI control off, the AI can neither read nor set the clipboard.
 | `scroll` | mouse wheel up/down/left/right |
 | `get_clipboard` | read text on the remote clipboard, e.g. after `ctrl+c` |
 | `set_clipboard` | put text on the remote clipboard, then paste with `ctrl+v` |
-| `type_text` | type text via Unicode, independent of the keyboard layout |
+| `type_text` | type text: key presses for characters on the keyboard layout, Unicode for the rest |
 | `press_keys` | shortcuts, e.g. `ctrl+c`, `win+r`, `alt+f4`, `ctrl+alt+delete`, `tab tab enter` |
 | `wait` | wait a moment for something to load |
 
@@ -152,7 +152,8 @@ under `env` in Claude Desktop:
 
 | variable | default | meaning |
 |---|---|---|
-| `RDP_MCP_LAYOUT` | `be` | layout of the remote session, used for letters in shortcuts (`be` = AZERTY, `us` = QWERTY) |
+| `RDP_MCP_LAYOUT` | `be` | keyboard layout of the remote session, used for shortcuts and `type_text` (`be` = Belgian AZERTY, `us` = US QWERTY) |
+| `RDP_MCP_TYPING` | `auto` | `auto`: `type_text` sends key presses for characters on the layout and Unicode for the rest; `unicode`: everything via Unicode |
 | `RDP_MCP_MAX_EDGE` | `1280` | longest side of screenshots in pixels |
 | `RDP_MCP_IMAGE_FORMAT` | `png` | `png` or `jpeg` (smaller, less sharp) |
 | `RDP_MCP_SETTLE` | `0.4` | minimum seconds a screenshot waits after the last action |
@@ -163,8 +164,10 @@ under `env` in Claude Desktop:
 - Copying files through the clipboard is not supported; use the shared folder.
 - The AI can only read text from the clipboard, not images.
 - No microphone.
-- Without Unicode support on the server (Windows has it), `type_text` can only type
-  letters, digits and spaces.
+- `type_text` only types correctly if `RDP_MCP_LAYOUT` matches the keyboard layout in
+  Windows; otherwise characters come out wrong. Set `RDP_MCP_TYPING=unicode` if they
+  can't match. Characters that are not on the layout go via Unicode, which some
+  windows ignore (e.g. a console running as administrator); the clipboard always works.
 
 ## Extra: the SDL client
 

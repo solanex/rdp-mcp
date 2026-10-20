@@ -28,6 +28,10 @@ BUTTONS = ("left", "right", "middle")
 # Het remote scherm loopt even achter op de invoer; een screenshot vlak na een
 # actie wacht daarom tot er minstens zoveel tijd verstreken is.
 SETTLE_SECONDS = float(os.environ.get("RDP_MCP_SETTLE", "0.4"))
+
+# auto: tekens op de toetsenbordindeling als toetsaanslagen (werkt in elk venster),
+# de rest via Unicode. unicode: alles via Unicode, zoals vroeger.
+TYPING = os.environ.get("RDP_MCP_TYPING", "auto").lower()
 _last_input = 0.0
 
 mcp = MCPServer(
@@ -356,20 +360,21 @@ def scroll(
 
 @mcp.tool()
 def type_text(text: str, session: str | None = None) -> str:
-    """Type text into the focused field. Independent of the keyboard layout.
+    """Type text into the focused field.
 
     A newline becomes Enter, a tab becomes Tab. Use press_keys for shortcuts.
-    Some windows ignore Unicode input, notably a console running as administrator:
-    if the text does not show up in the next screenshot, use set_clipboard and
-    press_keys('ctrl+v') instead.
+    Characters on the remote keyboard layout are sent as key presses, which works
+    in every window; other characters go via Unicode, which some windows ignore
+    (notably a console running as administrator). If text is missing in the next
+    screenshot, or for long texts, use set_clipboard and press_keys('ctrl+v').
     """
     s, info = _pick(session)
     if not info.unicode:
         bad = sorted({ch for ch in text if ch not in "\n\t\r" and keymap.char_to_scancodes(ch) is None})
         if bad:
             raise ToolError(
-                "this server does not support Unicode input; without Unicode only letters, "
-                f"digits and spaces can be typed. Not possible: {' '.join(bad)}"
+                "this server does not support Unicode input; without Unicode only characters "
+                f"on the keyboard layout can be typed. Not possible: {' '.join(bad)}"
             )
     with s.connect() as conn:
         for ch in text:
@@ -379,8 +384,8 @@ def type_text(text: str, session: str | None = None) -> str:
                 _press(conn, [keymap.scancode("tab")])
             elif ch == "\r":
                 continue
-            elif not info.unicode:
-                _press(conn, keymap.char_to_scancodes(ch))
+            elif (codes := keymap.char_to_scancodes(ch)) and (TYPING != "unicode" or not info.unicode):
+                _press(conn, codes)
             else:
                 units = ch.encode("utf-16-le")
                 for i in range(0, len(units), 2):

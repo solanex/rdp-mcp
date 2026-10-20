@@ -1,10 +1,10 @@
 """Toetsnamen naar RDP-scancodes (set 1; 0x100 = extended key).
 
 Scancodes zijn positioneel: welk teken een toets oplevert, hangt af van de
-toetsenbordindeling van de remote sessie. Voor letters in sneltoetsen
-(ctrl+a, win+r, ...) houden we daarom rekening met de indeling, in te stellen
-met RDP_MCP_LAYOUT (be = Belgisch azerty, us = qwerty). Gewone tekst typen
-gebeurt via Unicode-events en is onafhankelijk van de indeling.
+toetsenbordindeling van de remote sessie. Voor sneltoetsen (ctrl+a, win+r, ...)
+en voor tekst typen houden we daarom rekening met de indeling, in te stellen
+met RDP_MCP_LAYOUT (be = Belgisch azerty, us = qwerty). Tekens die niet op die
+indeling staan, gaan via Unicode-events.
 """
 
 from __future__ import annotations
@@ -80,18 +80,56 @@ def parse_combo(combo: str) -> list[int]:
     return [scancode(p) for p in parts]
 
 
+_SHIFT = _NAMED["shift"]
+_ALTGR = _NAMED["altgr"]
+
+# (scancode, zonder shift, met shift, met AltGr); None = geen teken of een dode toets.
+# Dode toetsen (^ ¨ ´ ` ~ op azerty) laten we weg: die wachten op een volgend teken.
+_KEYS_QWERTY = [
+    (0x29, "`", "~", None),
+    (0x02, "1", "!", None), (0x03, "2", "@", None), (0x04, "3", "#", None),
+    (0x05, "4", "$", None), (0x06, "5", "%", None), (0x07, "6", "^", None),
+    (0x08, "7", "&", None), (0x09, "8", "*", None), (0x0A, "9", "(", None),
+    (0x0B, "0", ")", None), (0x0C, "-", "_", None), (0x0D, "=", "+", None),
+    (0x1A, "[", "{", None), (0x1B, "]", "}", None), (0x2B, "\\", "|", None),
+    (0x27, ";", ":", None), (0x28, "'", '"', None),
+    (0x33, ",", "<", None), (0x34, ".", ">", None), (0x35, "/", "?", None),
+]
+
+_KEYS_AZERTY_BE = [
+    (0x29, "²", "³", None),
+    (0x02, "&", "1", "|"), (0x03, "é", "2", "@"), (0x04, '"', "3", "#"),
+    (0x05, "'", "4", None), (0x06, "(", "5", None), (0x07, "§", "6", None),
+    (0x08, "è", "7", None), (0x09, "!", "8", None), (0x0A, "ç", "9", "{"),
+    (0x0B, "à", "0", "}"), (0x0C, ")", "°", None), (0x0D, "-", "_", None),
+    (0x1A, None, None, "["), (0x1B, "$", "*", "]"),
+    (0x28, "ù", "%", None), (0x2B, "µ", "£", None), (0x56, "<", ">", "\\"),
+    (0x32, ",", "?", None), (0x33, ";", ".", None), (0x34, ":", "/", None),
+    (0x35, "=", "+", None),
+]
+
+
+def _build_chars(letters: dict[str, int], keys: list) -> dict[str, list[int]]:
+    table: dict[str, list[int]] = {" ": [_NAMED["space"]]}
+    for ch, code in letters.items():
+        table[ch] = [code]
+        table[ch.upper()] = [_SHIFT, code]
+    for code, plain, shifted, altgr in keys:
+        if plain:
+            table[plain] = [code]
+        if shifted:
+            table[shifted] = [_SHIFT, code]
+        if altgr:
+            table[altgr] = [_ALTGR, code]
+    return table
+
+
+_CHARS_QWERTY = _build_chars(_LETTERS_QWERTY, _KEYS_QWERTY)
+_CHARS_AZERTY_BE = {**_build_chars(_LETTERS_AZERTY_BE, _KEYS_AZERTY_BE), "€": [_ALTGR, 0x12]}
+
+
 def char_to_scancodes(ch: str) -> list[int] | None:
-    """Terugval als de server geen Unicode-invoer kent: tekens die we zeker via
-    scancodes kunnen typen (letters, cijfers, spatie). None = niet mogelijk."""
-    shift = _NAMED["shift"]
-    letters = _letters()
-    if ch == " ":
-        return [_NAMED["space"]]
-    if ch in letters:
-        return [letters[ch]]
-    if ch.lower() in letters and ch.isupper():
-        return [shift, letters[ch.lower()]]
-    if ch.isdigit() and ch.isascii():
-        # op azerty zitten de cijfers onder shift
-        return [shift, _NAMED[ch]] if _is_azerty() else [_NAMED[ch]]
-    return None
+    """Toetsen (modifiers eerst) die dit teken typen op de ingestelde indeling.
+    None = het teken staat niet op de indeling; dan moet het via Unicode."""
+    table = _CHARS_AZERTY_BE if _is_azerty() else _CHARS_QWERTY
+    return table.get(ch)
