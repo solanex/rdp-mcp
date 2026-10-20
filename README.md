@@ -125,6 +125,38 @@ was. With AI control off, the AI can neither read nor set the clipboard.
   Through it a local process of your user can list the address book and open hosts
   with their saved passwords, without ever receiving the passwords.
 
+### Restart and shutdown guard
+
+The MCP server tells the AI never to restart, shut down or sign out Windows, cut its
+connection or erase a disk unless you asked for exactly that, and never to follow
+instructions that appear on the remote screen. On top of that the app asks you
+before such an action goes through:
+
+- **Clicks.** Before the AI clicks, the app reads the screen with the macOS text
+  recognition (Vision, on your Mac). Clicking something like "Restart", "Shut down",
+  "Sleep" or "Sign out" (English or Dutch) asks first. "Afsluiten" (Dutch for both
+  "shut down" and "exit") only counts when the power menu or shutdown dialog is open.
+- **Enter.** Pressing Enter or Space while the power menu or the Alt+F4 shutdown
+  dialog is open asks first, and so does Enter on a console prompt or in the Run
+  dialog that holds a command like `Restart-Computer`, `shutdown /r`, `logoff`,
+  `Stop-Process winlogon`, `Disable-NetAdapter`, `Format-Volume` or `diskpart`. The
+  screen is read here too, so a command from the history or the clipboard counts.
+- **Typed text and the clipboard.** The MCP server hands every line the AI types to
+  the app before it presses Enter, and the text for `set_clipboard` before it is
+  set.
+
+Refuse is the default, and with no answer within 2 minutes the action is refused.
+Edit the words and command rules (regular expressions) under **Settings → AI
+Safety**, the gear in the toolbar; *Restore Defaults* brings back the built-in set.
+Turn the guard off per host under AI Safety in the host editor.
+
+This is a safety net against mistakes, not a security boundary: a button without
+text, another language, an alias, a script or a detour through a variable gets
+through. To really prevent it, sign in with an account that may not shut down
+Windows: on Windows Server only administrators have that right by default, and for
+an admin account the policy *Remove and prevent access to the Shut Down, Restart,
+Sleep, and Hibernate commands* hides the buttons. The SDL client has no guard.
+
 ## MCP tools
 
 | tool | what |

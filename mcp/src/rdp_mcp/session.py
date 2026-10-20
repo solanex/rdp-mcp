@@ -30,6 +30,9 @@ from pathlib import Path
 from typing import Iterator
 
 SOCKET_DIR = Path(os.environ.get("RDP_MCP_DIR", Path.home() / ".rdp-mcp"))
+# Een klik of toets kan wachten op de gebruiker: de app vraagt bevestiging bij
+# herstarten of afsluiten en weigert zelf na 120 s
+INPUT_TIMEOUT = 150
 
 
 class ClientError(Exception):
@@ -122,6 +125,19 @@ class Connection:
         parts = self.cmd(f"STATE {session_id}").split(" ", 1)
         return parts[0], parts[1] if len(parts) > 1 else ""
 
+    def guard(self, session_id: str, text: str) -> None:
+        """Laat de app de tekst controleren; ClientError 'refused' als de gebruiker weigert."""
+        data = text.encode("utf-8")
+        self._sock.sendall(f"GUARD {session_id} {len(data)}\n".encode() + data)
+        reply = self._file.readline().rstrip(b"\r\n")
+        if not reply:
+            raise ClientError("disconnected", "the app closed the connection")
+        if reply.startswith(b"ERR"):
+            parts = reply.decode(errors="replace").split(" ", 2)
+            raise ClientError(parts[1] if len(parts) > 1 else "error", parts[2] if len(parts) > 2 else "")
+        if not reply.startswith(b"OK"):
+            raise ClientError("protocol", f"unexpected reply: {reply!r}")
+
     def close_session(self, session_id: str) -> None:
         self.cmd(f"CLOSE {session_id}")
 
@@ -136,9 +152,9 @@ class Session:
         self.id = path.stem
 
     @contextmanager
-    def connect(self) -> Iterator[Connection]:
+    def connect(self, timeout: float = INPUT_TIMEOUT) -> Iterator[Connection]:
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.settimeout(15)
+        sock.settimeout(timeout)
         try:
             sock.connect(str(self.path))
         except OSError as e:
@@ -156,7 +172,7 @@ def list_sessions() -> list[tuple[Session, SessionInfo]]:
     for path in sorted(SOCKET_DIR.glob("*.sock")):
         session = Session(path)
         try:
-            with session.connect() as c:
+            with session.connect(timeout=15) as c:
                 result.append((session, c.info(session.id)))
         except ClientError:
             continue  # client is weg; de socket is een overblijfsel

@@ -12,6 +12,8 @@
 
 #include "rdpmcp_core.h"
 
+#define RDPMCP_MAX_CONNS 16
+
 /* Gedeelde toestand van één sessie. Threads:
  *  - frontend: tekent en stuurt lokale invoer
  *  - rdp:      verbinden + FreeRDP-eventloop, schrijft de framebuffer
@@ -73,6 +75,19 @@ struct rdpmcp_session
 	char sock_path[PATH_MAX];
 	int listen_fd;
 	pthread_t control_thread;
+
+	/* Open clientverbindingen, zodat rdpmcp_control_stop op hun threads kan wachten */
+	pthread_mutex_t conn_lock;
+	pthread_cond_t conn_cond;
+	int conn_fds[RDPMCP_MAX_CONNS];
+	int conn_count;
+
+	/* Door ai_guard geweigerde knoppen en toetsen: het loslaten ervan gaat ook niet door.
+	 * Bits: GUARD_BIT_* (control.c) */
+	atomic_uint ai_refused;
+	/* Laatste toegelaten knop-neer van de AI, om het loslaten op dezelfde plek niet
+	 * opnieuw te laten controleren */
+	atomic_int ai_down_x, ai_down_y;
 };
 
 uint64_t rdpmcp_now_ms(void);

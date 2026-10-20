@@ -96,6 +96,16 @@ struct HostEditor: View {
                     Toggle("AI control on when connecting", isOn: $entry.aiEnabledAtStart)
                     Toggle("Don’t verify certificate", isOn: $entry.ignoreCertificate)
                 }
+
+                Section {
+                    Toggle("Ask before the AI restarts, shuts down or signs out", isOn: $entry.confirmPowerActions)
+                } header: {
+                    Text("AI Safety")
+                } footer: {
+                    Text("The app reads the text where the AI clicks. A safety net, not a guarantee: to really prevent it, sign in with an account that may not shut down Windows.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
             .formStyle(.grouped)
 
@@ -121,7 +131,7 @@ struct HostEditor: View {
             }
             .padding()
         }
-        .frame(width: 500, height: 720)
+        .frame(width: 500, height: 780)
     }
 
     private func chooseFolder() {

@@ -24,6 +24,12 @@ off, and `ERR not-connected ...` when the session is not connected (yet).
 `UNICODE` returns `ERR unicode-unsupported ...` when the server does not support
 Unicode input.
 
+`BUTTON`, and `KEY`/`UNICODE` for Enter or Space, may wait for the user: the Mac app
+asks for confirmation when the action looks like it would restart, shut down or sign
+out Windows (up to 2 minutes). When the user refuses, the reply is `ERR refused ...`
+and nothing is sent to the server; releasing that button or key afterwards is refused
+too. If the client closed the connection in the meantime, the action is dropped.
+
 `CLIPGET` and `CLIPSET` can also return these errors:
 
 - `ERR clipboard-local ...`: the clipboard holds content from the user's Mac, which
@@ -56,9 +62,10 @@ shows its sign-in window to the user.
 | `CONNECT <host-id>` | `OK <session-id> <new\|existing>` | opens the host like a double-click; answers after Touch ID, if the host requires it |
 | `STATE <session-id>` | `OK <state> [message]` | state: `connecting`, `waiting-for-user` (sign-in or certificate prompt open), `connected`, `disconnected`, `failed` |
 | `CLOSE <session-id>` | `OK` | only for sessions opened with `CONNECT` |
+| `GUARD <session-id> <n>` + `n` bytes | `OK` | text (UTF-8) the AI is about to run: a typed line before Enter, or text for `CLIPSET`. When it matches a command rule, the app asks the user; waits up to 2 minutes. Max. 1 MiB |
 
 The session id is the name of the session socket without `.sock` (`<pid>-<n>`).
 
 Errors: `ERR not-found ...`, `ERR cancelled ...` (Touch ID declined), `ERR failed ...`
 (the session could not start), `ERR not-allowed ...` (`CLOSE` on a session the user
-opened).
+opened), `ERR refused ...` (`GUARD`: the user refused).

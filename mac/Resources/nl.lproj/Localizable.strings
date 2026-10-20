@@ -140,3 +140,55 @@
 "The password goes straight to the server and never to the AI." = "Het wachtwoord gaat rechtstreeks naar de server en nooit naar de AI.";
 "username" = "gebruikersnaam";
 "domain (e.g. EXAMPLE)" = "domein (bv. VOORBEELD)";
+
+/* Vangnet voor herstarten en afsluiten */
+"AI Safety" = "Veiligheid bij AI";
+"Ask before the AI restarts, shuts down or signs out" = "Vragen voor de AI herstart, afsluit of afmeldt";
+"The app reads the text where the AI clicks. A safety net, not a guarantee: to really prevent it, sign in with an account that may not shut down Windows." = "De app leest de tekst waar de AI klikt. Dit is een vangnet, geen garantie: wil je het echt verhinderen, meld dan aan met een account dat Windows niet mag afsluiten.";
+"The AI wants to click “%@”" = "De AI wil klikken op ‘%@’";
+"The AI wants to press Enter while “%@” is on screen" = "De AI wil op Enter drukken terwijl ‘%@’ op het scherm staat";
+"This may restart, shut down or sign out %@. Only allow it if you asked for it." = "Hierdoor kan %@ herstarten, afsluiten of afmelden. Sta het enkel toe als je daarom vroeg.";
+"Refuse" = "Weigeren";
+"Allow" = "Toestaan";
+"No answer: the AI action was refused" = "Geen antwoord: de AI-actie is geweigerd";
+"AI action allowed" = "AI-actie toegestaan";
+"AI action refused" = "AI-actie geweigerd";
+"power menu" = "aan/uit-menu";
+
+/* Commando's */
+"This restarts or shuts down Windows." = "Dit herstart Windows of sluit het af.";
+"This puts Windows to sleep." = "Dit zet Windows in slaapstand.";
+"This signs a user out." = "Dit meldt een gebruiker af.";
+"Stopping this system process crashes or restarts Windows." = "Dit systeemproces stoppen laat Windows crashen of herstarten.";
+"This restarts or shuts down a virtual machine." = "Dit herstart een virtuele machine of sluit ze af.";
+"This can cut the network connection, and with it this session." = "Dit kan de netwerkverbinding verbreken, en daarmee ook deze sessie.";
+"This can erase a disk." = "Dit kan een schijf wissen.";
+"This changes how Windows starts." = "Dit verandert hoe Windows opstart.";
+"This changes the domain membership and usually restarts Windows." = "Dit wijzigt het domeinlidmaatschap en herstart Windows meestal.";
+"The AI wants to run a command on %@" = "De AI wil een commando uitvoeren op %@";
+"Only allow it if you asked for it." = "Sta het enkel toe als je daarom vroeg.";
+
+/* Instellingen */
+"General" = "Algemeen";
+"Settings" = "Instellingen";
+"Settings, including the AI safety rules (⌘,)" = "Instellingen, ook de veiligheidsregels voor de AI (⌘,)";
+"The app asks before the AI clicks or runs something that matches these rules. Turn the check on or off per host in the address book. Words are matched case- and accent-insensitively, one per line." = "De app vraagt het je voor de AI iets aanklikt of uitvoert dat aan deze regels voldoet. De controle zet je per host aan of uit in het adresboek. Woorden worden herkend zonder op hoofdletters of accenten te letten, één per regel.";
+"Clicking these words always asks" = "Klikken op deze woorden vraagt altijd bevestiging";
+"Only when the power menu or shutdown dialog is open" = "Enkel als het aan/uit-menu of het afsluitvenster open staat";
+"For words like “Afsluiten”, which also closes an app." = "Voor woorden zoals ‘Afsluiten’, waarmee je ook een app sluit.";
+"Titles of the shutdown dialog" = "Titels van het afsluitvenster";
+"Buttons that close the shutdown dialog safely" = "Knoppen die het afsluitvenster veilig sluiten";
+"Not a valid regular expression; this rule is skipped." = "Geen geldige reguliere expressie; deze regel wordt overgeslagen.";
+"Pattern" = "Patroon";
+"regular expression" = "reguliere expressie";
+"Explanation" = "Uitleg";
+"what the command does" = "wat het commando doet";
+"Remove rule" = "Regel verwijderen";
+"Add Rule" = "Regel toevoegen";
+"Commands" = "Commando’s";
+"Checked when the AI presses Enter after typing, puts text on the clipboard, or presses Enter in a console or the Run dialog. Regular expressions, case-insensitive." = "Gecontroleerd als de AI na het typen op Enter drukt, tekst op het klembord zet, of op Enter drukt in een console of in Uitvoeren. Reguliere expressies, zonder onderscheid tussen hoofdletters en kleine letters.";
+"Try a command" = "Een commando uitproberen";
+"Command" = "Commando";
+"e.g. Restart-Computer -Force" = "bv. Restart-Computer -Force";
+"No rule matches" = "Geen enkele regel herkent dit";
+"Restore Defaults" = "Standaardwaarden terugzetten";

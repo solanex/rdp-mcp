@@ -54,6 +54,12 @@ struct AddressBookView: View {
                 }
                 .help("Add a new host (⌥⌘N)")
             }
+            ToolbarItem {
+                SettingsLink {
+                    Label("Settings", systemImage: "gearshape")
+                }
+                .help("Settings, including the AI safety rules (⌘,)")
+            }
         }
         .confirmationDialog("Delete \(deleting?.displayName ?? "")?",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {

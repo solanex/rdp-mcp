@@ -47,6 +47,12 @@ extern "C"
 		int x, y, w, h;
 	} rdpmcp_rect;
 
+	typedef enum
+	{
+		RDPMCP_GUARD_CLICK = 0, /* muisknop indrukken of loslaten op (x, y) */
+		RDPMCP_GUARD_KEY = 1    /* Enter of spatie; x = y = -1 */
+	} rdpmcp_guard_kind;
+
 	typedef struct
 	{
 		void* user;
@@ -80,6 +86,13 @@ extern "C"
 		/* Vul ontbrekende gegevens in (malloc/strdup; de kern geeft ze vrij).
 		 * false = de gebruiker annuleerde. */
 		bool (*authenticate)(void* user, char** username, char** password, char** domain);
+
+		/* De AI wil klikken of Enter/spatie indrukken. Krijgt een kopie van het scherm
+		 * (BGRX32, stride = w * 4, enkel geldig tijdens de oproep) en blokkeert de
+		 * control-thread tot er beslist is. false = weigeren: de invoer gaat niet naar de
+		 * server. NULL = alles toestaan. */
+		bool (*ai_guard)(void* user, rdpmcp_guard_kind kind, int x, int y, const uint8_t* bgrx,
+		                 int w, int h);
 	} rdpmcp_callbacks;
 
 	typedef struct

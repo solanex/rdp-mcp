@@ -18,6 +18,8 @@ struct HostEntry: Codable, Identifiable, Hashable {
     var ignoreCertificate = false
     var clipboard = true
     var aiEnabledAtStart = true
+    /// Bevestiging vragen als de AI klikt op herstarten, afsluiten of afmelden (PowerGuard)
+    var confirmPowerActions = true
     /// Er staat een wachtwoord in de sleutelhanger
     var hasSavedPassword = false
     /// Touch ID of het Mac-wachtwoord vragen voor het bewaarde wachtwoord gebruikt wordt
@@ -48,6 +50,7 @@ struct HostEntry: Codable, Identifiable, Hashable {
         ignoreCertificate = try c.decodeIfPresent(Bool.self, forKey: .ignoreCertificate) ?? d.ignoreCertificate
         clipboard = try c.decodeIfPresent(Bool.self, forKey: .clipboard) ?? d.clipboard
         aiEnabledAtStart = try c.decodeIfPresent(Bool.self, forKey: .aiEnabledAtStart) ?? d.aiEnabledAtStart
+        confirmPowerActions = try c.decodeIfPresent(Bool.self, forKey: .confirmPowerActions) ?? d.confirmPowerActions
         hasSavedPassword = try c.decodeIfPresent(Bool.self, forKey: .hasSavedPassword) ?? d.hasSavedPassword
         requireTouchID = try c.decodeIfPresent(Bool.self, forKey: .requireTouchID) ?? d.requireTouchID
         sound = try c.decodeIfPresent(Bool.self, forKey: .sound) ?? d.sound

@@ -2,6 +2,7 @@
  * Protocol: zie PROTOCOL.md. Eén thread per verbonden client. */
 
 #include <errno.h>
+#include <poll.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -183,6 +184,78 @@ static bool cmd_clipset(rdpmcp_session* s, int fd, FILE* in, const char* line)
 	return ok;
 }
 
+/* Bits in s->ai_refused: knoppen en toetsen waarvan het indrukken geweigerd werd */
+enum
+{
+	GUARD_BIT_LEFT = 1u << 0,
+	GUARD_BIT_RIGHT = 1u << 1,
+	GUARD_BIT_MIDDLE = 1u << 2,
+	GUARD_BIT_ENTER = 1u << 3,
+	GUARD_BIT_KP_ENTER = 1u << 4,
+	GUARD_BIT_SPACE = 1u << 5
+};
+
+static unsigned button_bit(UINT16 flag)
+{
+	switch (flag)
+	{
+		case PTR_FLAGS_BUTTON1: return GUARD_BIT_LEFT;
+		case PTR_FLAGS_BUTTON2: return GUARD_BIT_RIGHT;
+		default: return GUARD_BIT_MIDDLE;
+	}
+}
+
+/* Enter en spatie bevestigen een geselecteerd menu-item of een knop */
+static unsigned key_bit(unsigned code)
+{
+	switch (code)
+	{
+		case 0x1C: return GUARD_BIT_ENTER;
+		case 0x11C: return GUARD_BIT_KP_ENTER;
+		case 0x39: return GUARD_BIT_SPACE;
+		default: return 0;
+	}
+}
+
+/* De client sloot de verbinding (bv. een time-out terwijl de gebruiker nog moest beslissen) */
+static bool peer_gone(int fd)
+{
+	struct pollfd p = { .fd = fd, .events = POLLIN };
+	if (poll(&p, 1, 0) <= 0)
+		return false;
+	if (p.revents & (POLLHUP | POLLERR))
+		return true;
+	char c;
+	return recv(fd, &c, 1, MSG_PEEK | MSG_DONTWAIT) == 0;
+}
+
+/* Vraagt de frontend of de AI dit mag; true = doorlaten */
+static bool guard_allows(rdpmcp_session* s, int fd, rdpmcp_guard_kind kind, int x, int y)
+{
+	if (!s->cb.ai_guard)
+		return true;
+	pthread_mutex_lock(&s->fb_lock);
+	const int w = s->fb_w;
+	const int h = s->fb_h;
+	const size_t len = (size_t)w * h * 4;
+	uint8_t* copy = (s->fb && len) ? malloc(len) : NULL;
+	if (copy)
+		memcpy(copy, s->fb, len);
+	pthread_mutex_unlock(&s->fb_lock);
+	if (!copy)
+		return false; /* zonder beeld valt er niets te controleren */
+	const bool ok = s->cb.ai_guard(s->cb.user, kind, x, y, copy, w, h);
+	free(copy);
+	/* wie niet meer wacht op het antwoord, krijgt de actie ook niet uitgevoerd */
+	return ok && !peer_gone(fd);
+}
+
+static bool reply_refused(int fd)
+{
+	return reply(fd, "ERR refused the user did not allow this action (it looks like it would "
+	                 "restart, shut down or sign out Windows). Do not try another way; ask the user.");
+}
+
 /* Verwerkt één commandoregel; false = verbinding sluiten */
 static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 {
@@ -240,6 +313,37 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 		const bool down = strcmp(a2, "down") == 0;
 		if (!flag || (!down && strcmp(a2, "up") != 0))
 			return reply(fd, "ERR syntax BUTTON <left|right|middle> <down|up> <x> <y>");
+		const unsigned bit = button_bit(flag);
+		if (down)
+		{
+			if (!guard_allows(s, fd, RDPMCP_GUARD_CLICK, x, y))
+			{
+				atomic_fetch_or(&s->ai_refused, bit);
+				return reply_refused(fd);
+			}
+			atomic_fetch_and(&s->ai_refused, ~bit);
+			atomic_store(&s->ai_down_x, x);
+			atomic_store(&s->ai_down_y, y);
+		}
+		else
+		{
+			/* het indrukken werd geweigerd: dan ook niet loslaten */
+			if (atomic_fetch_and(&s->ai_refused, ~bit) & bit)
+				return reply_refused(fd);
+			/* Een menu-item reageert op het loslaten. Elders loslaten dan waar de knop
+			 * neerging (slepen) wordt dus apart gecontroleerd; bij een weigering laat de
+			 * knop los waar hij neerging. */
+			const int dx = x - atomic_load(&s->ai_down_x);
+			const int dy = y - atomic_load(&s->ai_down_y);
+			if ((dx * dx + dy * dy > 16) && !guard_allows(s, fd, RDPMCP_GUARD_CLICK, x, y))
+			{
+				const int ox = atomic_load(&s->ai_down_x);
+				const int oy = atomic_load(&s->ai_down_y);
+				mouse(s, PTR_FLAGS_MOVE, ox, oy);
+				mouse(s, flag, ox, oy);
+				return reply_refused(fd);
+			}
+		}
 		mouse(s, flag | (down ? PTR_FLAGS_DOWN : 0), x, y);
 		rdpmcp_ai_touch(s, x, y);
 		return reply(fd, "OK");
@@ -268,9 +372,21 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 		if (sscanf(line, "%*s %15s %x", a1, &code) != 2 || code == 0 || code > 0x1FF ||
 		    (strcmp(a1, "down") != 0 && strcmp(a1, "up") != 0))
 			return reply(fd, "ERR syntax KEY <down|up> <scancode-hex>");
+		const bool down = strcmp(a1, "down") == 0;
+		const unsigned bit = key_bit(code);
+		if (bit && down)
+		{
+			if (!guard_allows(s, fd, RDPMCP_GUARD_KEY, -1, -1))
+			{
+				atomic_fetch_or(&s->ai_refused, bit);
+				return reply_refused(fd);
+			}
+			atomic_fetch_and(&s->ai_refused, ~bit);
+		}
+		else if (bit && (atomic_fetch_and(&s->ai_refused, ~bit) & bit))
+			return reply_refused(fd);
 		pthread_mutex_lock(&s->input_lock);
-		freerdp_input_send_keyboard_event_ex(s->common.context.input, strcmp(a1, "down") == 0,
-		                                     FALSE, code);
+		freerdp_input_send_keyboard_event_ex(s->common.context.input, down, FALSE, code);
 		pthread_mutex_unlock(&s->input_lock);
 		rdpmcp_ai_touch(s, -1, -1);
 		return reply(fd, "OK");
@@ -283,6 +399,9 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 			return reply(fd, "ERR syntax UNICODE <utf16-codeunit-hex>");
 		if (!freerdp_settings_get_bool(s->common.context.settings, FreeRDP_UnicodeInput))
 			return reply(fd, "ERR unicode-unsupported the server does not support Unicode input");
+		if ((code == '\r' || code == '\n' || code == ' ') &&
+		    !guard_allows(s, fd, RDPMCP_GUARD_KEY, -1, -1))
+			return reply_refused(fd);
 		pthread_mutex_lock(&s->input_lock);
 		freerdp_input_send_unicode_keyboard_event(s->common.context.input, 0, (UINT16)code);
 		freerdp_input_send_unicode_keyboard_event(s->common.context.input, KBD_FLAGS_RELEASE,
@@ -295,9 +414,36 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 	return reply(fd, "ERR unknown-command unknown command '%s'", cmd);
 }
 
+static bool conn_register(rdpmcp_session* s, int fd)
+{
+	pthread_mutex_lock(&s->conn_lock);
+	const bool ok = s->listen_fd >= 0 && s->conn_count < RDPMCP_MAX_CONNS;
+	if (ok)
+		s->conn_fds[s->conn_count++] = fd;
+	pthread_mutex_unlock(&s->conn_lock);
+	return ok;
+}
+
+static void conn_unregister(rdpmcp_session* s, int fd)
+{
+	pthread_mutex_lock(&s->conn_lock);
+	for (int i = 0; i < s->conn_count; i++)
+	{
+		if (s->conn_fds[i] == fd)
+		{
+			s->conn_fds[i] = s->conn_fds[--s->conn_count];
+			break;
+		}
+	}
+	pthread_cond_broadcast(&s->conn_cond);
+	pthread_mutex_unlock(&s->conn_lock);
+}
+
 static void* conn_thread(void* arg)
 {
 	conn_t* c = arg;
+	rdpmcp_session* s = c->s;
+	const int fd = c->fd;
 	FILE* in = fdopen(c->fd, "r");
 	if (in)
 	{
@@ -308,10 +454,15 @@ static void* conn_thread(void* arg)
 			if (!handle_line(c->s, c->fd, in, line))
 				break;
 		}
-		fclose(in); /* sluit ook c->fd */
+		/* eerst afmelden: na fclose kan het fd-nummer hergebruikt worden */
+		conn_unregister(s, fd);
+		fclose(in); /* sluit ook fd */
 	}
 	else
-		close(c->fd);
+	{
+		conn_unregister(s, fd);
+		close(fd);
+	}
 	free(c);
 	return NULL;
 }
@@ -328,6 +479,11 @@ static void* accept_thread(void* arg)
 				continue;
 			break; /* listen-socket gesloten: stoppen */
 		}
+#ifdef SO_NOSIGPIPE
+		/* schrijven naar een client die al weg is, mag de app niet stoppen (SIGPIPE) */
+		const int one = 1;
+		setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &one, sizeof(one));
+#endif
 		conn_t* c = malloc(sizeof(*c));
 		pthread_t t;
 		if (!c)
@@ -337,8 +493,16 @@ static void* accept_thread(void* arg)
 		}
 		c->s = s;
 		c->fd = fd;
+		if (!conn_register(s, fd))
+		{
+			reply(fd, "ERR busy too many connections");
+			close(fd);
+			free(c);
+			continue;
+		}
 		if (pthread_create(&t, NULL, conn_thread, c) != 0)
 		{
+			conn_unregister(s, fd);
 			close(fd);
 			free(c);
 			continue;
@@ -402,10 +566,21 @@ void rdpmcp_control_stop(rdpmcp_session* s)
 {
 	if (s->listen_fd >= 0)
 	{
+		pthread_mutex_lock(&s->conn_lock);
 		shutdown(s->listen_fd, SHUT_RDWR);
 		close(s->listen_fd);
-		s->listen_fd = -1;
+		s->listen_fd = -1; /* conn_register laat geen nieuwe verbindingen meer toe */
+		pthread_mutex_unlock(&s->conn_lock);
 		pthread_join(s->control_thread, NULL);
+
+		pthread_mutex_lock(&s->conn_lock);
+		/* Open verbindingen afbreken en wachten tot hun threads de sessie loslaten. Een
+		 * thread in ai_guard keert terug zodra de frontend de vraag annuleert. */
+		for (int i = 0; i < s->conn_count; i++)
+			shutdown(s->conn_fds[i], SHUT_RDWR);
+		while (s->conn_count > 0)
+			pthread_cond_wait(&s->conn_cond, &s->conn_lock);
+		pthread_mutex_unlock(&s->conn_lock);
 	}
 	if (s->sock_path[0])
 	{

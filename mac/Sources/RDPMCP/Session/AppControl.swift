@@ -79,10 +79,31 @@ final class AppControl {
         defer { Darwin.close(client) }
         var pending = [UInt8]()
         var chunk = [UInt8](repeating: 0, count: 4096)
+        func fill(_ count: Int, limit: Int) -> Bool {
+            while pending.count < count {
+                let n = read(client, &chunk, chunk.count)
+                if n <= 0 || pending.count > limit { return false }
+                pending.append(contentsOf: chunk[..<n])
+            }
+            return true
+        }
         while true {
             if let nl = pending.firstIndex(of: 0x0A) {
                 let line = String(decoding: pending[..<nl], as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
                 pending.removeSubrange(...nl)
+                // GUARD <sessie-id> <bytes> + tekst: de payload eerst volledig inlezen
+                let parts = line.split(separator: " ")
+                if parts.first?.uppercased() == "GUARD" {
+                    guard parts.count == 3, let n = Int(parts[2]), (0...Self.guardMaxBytes).contains(n) else {
+                        _ = write(client, reply("ERR syntax GUARD <session-id> <bytes> followed by the UTF-8 text (max 1 MiB)"))
+                        return // payload niet betrouwbaar over te slaan
+                    }
+                    guard fill(n, limit: Self.guardMaxBytes + 4096) else { return }
+                    let text = String(decoding: pending[..<n], as: UTF8.self)
+                    pending.removeSubrange(..<n)
+                    guard write(client, guardText(String(parts[1]), text)) else { return }
+                    continue
+                }
                 guard write(client, handle(line)) else { return }
                 continue
             }
@@ -90,6 +111,18 @@ final class AppControl {
             if n <= 0 || pending.count > 65536 { return }
             pending.append(contentsOf: chunk[..<n])
         }
+    }
+
+    private static let guardMaxBytes = 1 << 20
+
+    /// Socketthread: blokkeert zolang de gebruiker beslist
+    private func guardText(_ sid: String, _ text: String) -> Data {
+        guard let session = onMain({ self.find(sid) }) else {
+            return reply("ERR not-found no open session \(sid)")
+        }
+        return session.guardText(text)
+            ? reply("OK")
+            : reply("ERR refused the user did not allow this command (it looks like it would restart, shut down or sign out Windows, cut the connection or erase a disk). Do not try another way; ask the user.")
     }
 
     private func handle(_ line: String) -> Data {

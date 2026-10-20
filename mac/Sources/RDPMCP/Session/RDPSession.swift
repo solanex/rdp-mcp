@@ -51,6 +51,12 @@ final class RDPSession: ObservableObject, Identifiable {
     private let promptLock = NSLock()
     private var pendingPrompt: DispatchSemaphore?
     private var noticeTimer: Timer?
+    /// Na close(): geen nieuwe vragen meer stellen (de kern wacht op de control-threads)
+    private var isClosing: Bool {
+        get { promptLock.lock(); defer { promptLock.unlock() }; return closing }
+        set { promptLock.lock(); closing = newValue; promptLock.unlock() }
+    }
+    private var closing = false
 
     init(entry: HostEntry) {
         self.entry = entry
@@ -146,6 +152,10 @@ final class RDPSession: ObservableObject, Identifiable {
         cb.authenticate = { user, username, password, domain in
             RDPSession.from(user).askCredentials(username: username, password: password, domain: domain)
         }
+        cb.ai_guard = { user, kind, x, y, bgrx, w, h in
+            guard let bgrx else { return false }
+            return RDPSession.from(user).guardAI(kind: kind, x: Int(x), y: Int(y), bgrx: bgrx, width: Int(w), height: Int(h))
+        }
 
         guard let h = rdpmcp_session_new(&config, &cb) else {
             retained.release()
@@ -167,6 +177,7 @@ final class RDPSession: ObservableObject, Identifiable {
 
     /// Sluit de sessie. Het vrijgeven gebeurt op de achtergrond, want het wacht op de rdp-thread.
     func close() {
+        isClosing = true
         cancelPendingPrompt()
         guard let h = handle else { return }
         handle = nil
@@ -181,6 +192,7 @@ final class RDPSession: ObservableObject, Identifiable {
 
     /// Bij afsluiten van de app: synchroon, zodat de sockets opgeruimd worden
     func closeAndWait() {
+        isClosing = true
         cancelPendingPrompt()
         guard let h = handle else { return }
         handle = nil
@@ -263,7 +275,7 @@ final class RDPSession: ObservableObject, Identifiable {
         var decision = RDPMCP_CERT_REJECT
         let sem = beginPrompt()
         DispatchQueue.main.async {
-            self.onNeedsAttention?(self)
+            self.bringToFront()
             let alert = NSAlert()
             alert.alertStyle = changed ? .critical : .warning
             alert.messageText = changed
@@ -305,7 +317,7 @@ final class RDPSession: ObservableObject, Identifiable {
         var result: (String, String, String, Bool)?
         let sem = beginPrompt()
         DispatchQueue.main.async {
-            self.onNeedsAttention?(self)
+            self.bringToFront()
             let prompt = CredentialsPrompt(host: self.entry.displayName, username: oldUser, domain: oldDomain,
                                            canSave: self.onSavePassword != nil)
             self.present(prompt.alert) { response in
@@ -330,6 +342,171 @@ final class RDPSession: ObservableObject, Identifiable {
             DispatchQueue.main.async { self.onSavePassword?(entry, user, dom, pass) }
         }
         return true
+    }
+
+    /// control-thread: mag de AI deze klik of toets doorsturen?
+    private func guardAI(kind: rdpmcp_guard_kind, x: Int, y: Int, bgrx: UnsafePointer<UInt8>,
+                         width: Int, height: Int) -> Bool {
+        guard entry.confirmPowerActions else { return true }
+        guard let image = PowerGuard.image(bgrx: bgrx, width: width, height: height) else { return false }
+        let action: PowerGuard.Action = kind == RDPMCP_GUARD_CLICK ? .click(x: x, y: y) : .key
+        guard let finding = PowerGuard.check(action, image: image, cache: screenCache) else { return true }
+        // de MCP-server legde dit commando net voor en de gebruiker stond het toe
+        if let reason = finding.commandReason, wasJustAllowed(reason) { return true }
+        return confirm(action, finding: finding, image: image)
+    }
+
+    /// Socketthread van AppControl: tekst die de AI wil typen of op het klembord zetten.
+    /// true = mag; zonder herkend commando wordt er niets gevraagd.
+    func guardText(_ text: String) -> Bool {
+        guard entry.confirmPowerActions, let reason = CommandGuard.check(text) else { return true }
+        let shown = text.count > 300 ? String(text.prefix(300)) + "…" : text
+        let allowed = confirm(.key, finding: PowerGuard.Finding(text: shown, box: nil, commandReason: reason), image: nil)
+        if allowed {
+            promptLock.lock()
+            allowedCommand = (reason, Date())
+            promptLock.unlock()
+        }
+        return allowed
+    }
+
+    /// Na een toegestaan commando ziet PowerGuard het bij Enter op het scherm; niet
+    /// nog eens vragen
+    private var allowedCommand: (reason: String, at: Date)?
+
+    private func wasJustAllowed(_ reason: String) -> Bool {
+        promptLock.lock()
+        defer { promptLock.unlock() }
+        guard let a = allowedCommand, a.reason == reason, Date().timeIntervalSince(a.at) < 30 else { return false }
+        allowedCommand = nil
+        return true
+    }
+
+    private let screenCache = ScreenCache()
+
+    /// Hoe lang de gebruiker heeft om te beslissen; daarna wordt de actie geweigerd
+    private static let confirmTimeout: TimeInterval = 120
+
+    /// control-thread: toont de vraag en wacht op het antwoord
+    private func confirm(_ action: PowerGuard.Action, finding: PowerGuard.Finding, image: CGImage?) -> Bool {
+        promptLock.lock()
+        if closing || pendingPrompt != nil {
+            promptLock.unlock()
+            return false
+        }
+        promptLock.unlock()
+
+        var allowed = false
+        var shown: (NSAlert, NSWindow?)?
+        let sem = beginPrompt()
+        DispatchQueue.main.async {
+            self.bringToFront()
+            let alert = NSAlert()
+            alert.alertStyle = .critical
+            if let reason = finding.commandReason {
+                alert.messageText = String(localized: "The AI wants to run a command on \(self.entry.displayName)")
+                alert.informativeText = reason + " " + String(localized: "Only allow it if you asked for it.")
+                alert.accessoryView = Self.commandView(finding.text)
+            } else {
+                switch action {
+                case .click:
+                    alert.messageText = String(localized: "The AI wants to click “\(finding.text)”")
+                case .key:
+                    alert.messageText = String(localized: "The AI wants to press Enter while “\(finding.text)” is on screen")
+                }
+                alert.informativeText = String(localized: "This may restart, shut down or sign out \(self.entry.displayName). Only allow it if you asked for it.")
+                alert.accessoryView = image.flatMap { Self.preview(image: $0, action: action, box: finding.box) }
+            }
+            alert.addButton(withTitle: String(localized: "Refuse"))
+            alert.addButton(withTitle: String(localized: "Allow"))
+            let window = self.view.window ?? NSApp.keyWindow ?? NSApp.windows.first
+            shown = (alert, window)
+            self.present(alert) { response in
+                allowed = response == .alertSecondButtonReturn
+                self.endPrompt(sem)
+            }
+        }
+        if sem.wait(timeout: .now() + Self.confirmTimeout) == .timedOut {
+            DispatchQueue.main.async {
+                if let (alert, window) = shown {
+                    if let window, alert.window.sheetParent != nil {
+                        window.endSheet(alert.window, returnCode: .cancel)
+                    } else {
+                        NSApp.abortModal()
+                    }
+                }
+                self.show(notice: String(localized: "No answer: the AI action was refused"))
+            }
+            cancelPendingPrompt()
+            return false
+        }
+        DispatchQueue.main.async {
+            self.show(notice: allowed ? String(localized: "AI action allowed") : String(localized: "AI action refused"))
+        }
+        return allowed
+    }
+
+    /// Het commando, leesbaar en selecteerbaar
+    private static func commandView(_ text: String) -> NSView {
+        let field = NSTextField(wrappingLabelWithString: text)
+        field.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
+        field.isSelectable = true
+        field.preferredMaxLayoutWidth = 420
+        field.frame.size = field.fittingSize
+        return field
+    }
+
+    /// Uitsnede van het scherm rond de klik of de herkende tekst, met een rode markering
+    private static func preview(image: CGImage, action: PowerGuard.Action, box: CGRect?) -> NSView? {
+        let center: CGPoint
+        if case .click(let x, let y) = action {
+            center = CGPoint(x: x, y: y)
+        } else if let box {
+            center = CGPoint(x: box.midX, y: box.midY)
+        } else {
+            center = CGPoint(x: image.width / 2, y: image.height / 2)
+        }
+        let size = CGSize(width: min(480, image.width), height: min(240, image.height))
+        let origin = CGPoint(x: min(max(0, center.x - size.width / 2), CGFloat(image.width) - size.width),
+                             y: min(max(0, center.y - size.height / 2), CGFloat(image.height) - size.height))
+        let crop = CGRect(origin: origin, size: size).integral
+        guard let part = image.cropping(to: crop) else { return nil }
+
+        let shot = NSImage(size: crop.size)
+        shot.lockFocusFlipped(true)
+        if let ctx = NSGraphicsContext.current?.cgContext {
+            // in een geflipte context tekent CGImage ondersteboven
+            ctx.saveGState()
+            ctx.translateBy(x: 0, y: crop.height)
+            ctx.scaleBy(x: 1, y: -1)
+            ctx.draw(part, in: CGRect(origin: .zero, size: crop.size))
+            ctx.restoreGState()
+            NSColor.systemRed.setStroke()
+            if let box {
+                let r = NSBezierPath(rect: box.offsetBy(dx: -crop.minX, dy: -crop.minY).insetBy(dx: -4, dy: -3))
+                r.lineWidth = 2
+                r.stroke()
+            }
+            if case .click = action {
+                let p = CGPoint(x: center.x - crop.minX, y: center.y - crop.minY)
+                let dot = NSBezierPath(ovalIn: CGRect(x: p.x - 7, y: p.y - 7, width: 14, height: 14))
+                dot.lineWidth = 3
+                dot.stroke()
+            }
+        }
+        shot.unlockFocus()
+        let view = NSImageView(image: shot)
+        view.frame = CGRect(origin: .zero, size: CGSize(width: crop.width, height: crop.height))
+        return view
+    }
+
+    /// Tab selecteren en de app naar voren halen: een vraag achter een ander venster
+    /// ziet de gebruiker niet
+    private func bringToFront() {
+        onNeedsAttention?(self)
+        NSApp.activate(ignoringOtherApps: true)
+        (view.window ?? NSApp.windows.first { $0.isVisible })?.makeKeyAndOrderFront(nil)
+        NSApp.requestUserAttention(.criticalRequest)
     }
 
     private func present(_ alert: NSAlert, completion: @escaping (NSApplication.ModalResponse) -> Void) {

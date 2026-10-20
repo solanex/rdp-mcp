@@ -58,6 +58,20 @@ struct RDPMCPApp: App {
 }
 
 struct SettingsView: View {
+    var body: some View {
+        TabView {
+            Tab("General", systemImage: "gearshape") {
+                GeneralSettingsView()
+            }
+            Tab("AI Safety", systemImage: "hand.raised") {
+                GuardSettingsView()
+            }
+        }
+        .frame(width: 620, height: 640)
+    }
+}
+
+struct GeneralSettingsView: View {
     @AppStorage("cmdAsWin") private var cmdAsWin = false
 
     var body: some View {
@@ -72,7 +86,7 @@ struct SettingsView: View {
                 .foregroundStyle(.secondary)
         }
         .padding(20)
-        .frame(width: 420)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
     }
 }
 

@@ -443,6 +443,8 @@ static BOOL mcp_client_new(freerdp* instance, rdpContext* context)
 
 	pthread_mutex_init(&s->fb_lock, NULL);
 	pthread_mutex_init(&s->input_lock, NULL);
+	pthread_mutex_init(&s->conn_lock, NULL);
+	pthread_cond_init(&s->conn_cond, NULL);
 	rdpmcp_clip_init(s);
 	atomic_store(&s->ai_enabled, true);
 	s->clipboard_enabled = true;
@@ -459,6 +461,8 @@ static void mcp_client_free(freerdp* instance, rdpContext* context)
 	s->fb = NULL;
 	pthread_mutex_destroy(&s->fb_lock);
 	pthread_mutex_destroy(&s->input_lock);
+	pthread_mutex_destroy(&s->conn_lock);
+	pthread_cond_destroy(&s->conn_cond);
 	rdpmcp_clip_free(s);
 }
 
