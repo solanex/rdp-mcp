@@ -29,7 +29,7 @@ struct ContentView: View {
         .onReceive(NotificationCenter.default.publisher(for: .newHost)) { _ in
             editing = HostEntry()
         }
-        .alert("Adresboek", isPresented: Binding(get: { book.loadError != nil },
+        .alert("Address Book", isPresented: Binding(get: { book.loadError != nil },
                                                  set: { if !$0 { book.loadError = nil } })) {
             Button("OK") {}
         } message: {
@@ -99,9 +99,9 @@ private struct EmptyState: View {
             Image(systemName: "display.2")
                 .font(.system(size: 48))
                 .foregroundStyle(.secondary)
-            Text(hasDetached ? "Alle sessies staan in een eigen venster" : "Geen open sessies")
+            (hasDetached ? Text("All sessions are in their own window") : Text("No open sessions"))
                 .font(.title3)
-            Text("Dubbelklik een host in het adresboek, of verbind snel via het veld bovenaan.")
+            Text("Double-click a host in the address book, or quick connect with the field at the top.")
                 .foregroundStyle(.secondary)
         }
         .padding()
@@ -125,19 +125,19 @@ struct SessionContainer: View {
             case .connecting:
                 VStack(spacing: 12) {
                     ProgressView()
-                    Text("Verbinden met \(session.entry.displayName)…")
+                    Text("Connecting to \(session.entry.displayName)…")
                 }
                 .padding(24)
                 .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
             case .disconnected(let message):
-                ended(title: "Verbinding gesloten", message: message)
+                ended(title: "Connection closed", message: message)
             case .failed(let message):
-                ended(title: "Verbinding mislukt", message: message)
+                ended(title: "Connection failed", message: message)
             }
         }
     }
 
-    private func ended(title: String, message: String?) -> some View {
+    private func ended(title: LocalizedStringKey, message: String?) -> some View {
         VStack(spacing: 12) {
             Image(systemName: "bolt.horizontal.circle")
                 .font(.system(size: 36))
@@ -150,11 +150,11 @@ struct SessionContainer: View {
                     .frame(maxWidth: 420)
             }
             HStack {
-                Button("Opnieuw verbinden") {
+                Button("Reconnect") {
                     Task { await manager.reconnect(session) }
                 }
                 .keyboardShortcut(.defaultAction)
-                Button("Tab sluiten") { manager.close(session) }
+                Button("Close Tab") { manager.close(session) }
             }
         }
         .padding(24)

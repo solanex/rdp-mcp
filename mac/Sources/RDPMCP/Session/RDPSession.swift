@@ -138,14 +138,14 @@ final class RDPSession: ObservableObject, Identifiable {
 
         guard let h = rdpmcp_session_new(&config, &cb) else {
             retained.release()
-            status = .failed("Ongeldige instellingen")
+            status = .failed(String(localized: "Invalid settings"))
             return false
         }
         handle = h
         selfRetain = retained
         guard rdpmcp_session_start(h) else {
             close()
-            status = .failed("Sessie kon niet starten")
+            status = .failed(String(localized: "The session could not start"))
             return false
         }
         return true
@@ -180,7 +180,7 @@ final class RDPSession: ObservableObject, Identifiable {
     func setAI(_ enabled: Bool) {
         aiEnabled = enabled
         if let h = handle { rdpmcp_set_ai_enabled(h, enabled) }
-        show(notice: enabled ? "AI-besturing aan" : "AI-besturing uit")
+        show(notice: enabled ? String(localized: "AI control on") : String(localized: "AI control off"))
     }
 
     func localClipboardChanged(text: String?, dib: Data?) {
@@ -216,7 +216,7 @@ final class RDPSession: ObservableObject, Identifiable {
             status = .connected
             view.focusIfActive()
         case RDPMCP_STATE_DISCONNECTED: status = .disconnected(message)
-        default: status = .failed(message ?? "Onbekende fout")
+        default: status = .failed(message ?? String(localized: "Unknown error"))
         }
     }
 
@@ -253,16 +253,20 @@ final class RDPSession: ObservableObject, Identifiable {
             let alert = NSAlert()
             alert.alertStyle = changed ? .critical : .warning
             alert.messageText = changed
-                ? "Het certificaat van \(host) is gewijzigd"
-                : "Onbekend certificaat voor \(host)"
-            alert.informativeText = """
-            \(changed ? "Dit kan wijzen op een aanval (man-in-the-middle). Vertrouw het enkel als je weet waarom het veranderde.\n\n" : "")Onderwerp: \(subject)
-            Uitgever: \(issuer)
-            Vingerafdruk: \(fingerprint.count > 200 ? "(certificaat in PEM-formaat)" : fingerprint)
-            """
-            alert.addButton(withTitle: "Altijd vertrouwen")
-            alert.addButton(withTitle: "Eén keer")
-            alert.addButton(withTitle: "Annuleren")
+                ? String(localized: "The certificate of \(host) has changed")
+                : String(localized: "Unknown certificate for \(host)")
+            let warning = changed
+                ? String(localized: "This may indicate an attack (man-in-the-middle). Only trust it if you know why it changed.") + "\n\n"
+                : ""
+            let shownFingerprint = fingerprint.count > 200 ? String(localized: "(certificate in PEM format)") : fingerprint
+            alert.informativeText = warning + String(localized: """
+            Subject: \(subject)
+            Issuer: \(issuer)
+            Fingerprint: \(shownFingerprint)
+            """)
+            alert.addButton(withTitle: String(localized: "Always Trust"))
+            alert.addButton(withTitle: String(localized: "Once"))
+            alert.addButton(withTitle: String(localized: "Cancel"))
             self.present(alert) { response in
                 switch response {
                 case .alertFirstButtonReturn: decision = RDPMCP_CERT_ACCEPT_ALWAYS
@@ -329,7 +333,7 @@ private final class CredentialsPrompt {
     private let userField = NSTextField()
     private let domainField = NSTextField()
     private let passwordField = NSSecureTextField()
-    private let saveBox = NSButton(checkboxWithTitle: "Wachtwoord bewaren in de sleutelhanger", target: nil, action: nil)
+    private let saveBox = NSButton(checkboxWithTitle: String(localized: "Save password in the keychain"), target: nil, action: nil)
 
     var username: String { userField.stringValue }
     var domain: String { domainField.stringValue }
@@ -337,16 +341,16 @@ private final class CredentialsPrompt {
     var save: Bool { saveBox.state == .on }
 
     init(host: String, username: String, domain: String, canSave: Bool) {
-        alert.messageText = "Aanmelden bij \(host)"
-        alert.informativeText = "Het wachtwoord gaat rechtstreeks naar de server en nooit naar de AI."
-        alert.addButton(withTitle: "Verbinden")
-        alert.addButton(withTitle: "Annuleren")
+        alert.messageText = String(localized: "Sign in to \(host)")
+        alert.informativeText = String(localized: "The password goes straight to the server and never to the AI.")
+        alert.addButton(withTitle: String(localized: "Connect"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
 
         userField.stringValue = username
-        userField.placeholderString = "gebruikersnaam"
+        userField.placeholderString = String(localized: "username")
         domainField.stringValue = domain
-        domainField.placeholderString = "domein (bv. VOORBEELD)"
-        passwordField.placeholderString = "wachtwoord"
+        domainField.placeholderString = String(localized: "domain (e.g. EXAMPLE)")
+        passwordField.placeholderString = String(localized: "password")
         saveBox.isHidden = !canSave
 
         let stack = NSStackView(views: [userField, domainField, passwordField, saveBox])

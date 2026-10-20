@@ -10,13 +10,13 @@ struct AddressBookView: View {
 
     var body: some View {
         List(selection: $selection) {
-            Section("Snel verbinden") {
-                TextField("host of IP-adres", text: $quickHost)
+            Section("Quick Connect") {
+                TextField("host or IP address", text: $quickHost)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(quickConnect)
             }
             ForEach(book.groups, id: \.self) { group in
-                Section(group.isEmpty ? "Overige" : group) {
+                Section(group.isEmpty ? String(localized: "Other") : group) {
                     ForEach(book.entries(in: group)) { entry in
                         HostRow(entry: entry, session: manager.session(for: entry))
                             .tag(entry.id)
@@ -27,18 +27,18 @@ struct AddressBookView: View {
         .listStyle(.sidebar)
         .contextMenu(forSelectionType: UUID.self) { ids in
             if let id = ids.first, let entry = book.entry(id: id) {
-                Button("Verbinden") { Task { await manager.connect(entry) } }
-                Button("Bewerken…") { editing = entry }
-                Button("Dupliceren") {
+                Button("Connect") { Task { await manager.connect(entry) } }
+                Button("Edit…") { editing = entry }
+                Button("Duplicate") {
                     var copy = entry
                     copy.id = UUID()
-                    copy.name = entry.displayName + " (kopie)"
+                    copy.name = String(localized: "\(entry.displayName) (copy)")
                     copy.hasSavedPassword = false
                     copy.requireTouchID = false
                     book.upsert(copy)
                 }
                 Divider()
-                Button("Verwijderen…", role: .destructive) { deleting = entry }
+                Button("Delete…", role: .destructive) { deleting = entry }
             }
         } primaryAction: { ids in
             if let id = ids.first, let entry = book.entry(id: id) {
@@ -50,19 +50,19 @@ struct AddressBookView: View {
                 Button {
                     editing = HostEntry()
                 } label: {
-                    Label("Nieuwe host", systemImage: "plus")
+                    Label("New Host", systemImage: "plus")
                 }
-                .help("Nieuwe host toevoegen (⌥⌘N)")
+                .help("Add a new host (⌥⌘N)")
             }
         }
-        .confirmationDialog("\(deleting?.displayName ?? "") verwijderen?",
+        .confirmationDialog("Delete \(deleting?.displayName ?? "")?",
                             isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })) {
-            Button("Verwijderen", role: .destructive) {
+            Button("Delete", role: .destructive) {
                 if let entry = deleting { book.delete(entry) }
                 deleting = nil
             }
         } message: {
-            Text("Ook een bewaard wachtwoord wordt uit de sleutelhanger verwijderd.")
+            Text("A saved password is also removed from the keychain.")
         }
     }
 
@@ -99,7 +99,7 @@ private struct HostRow: View {
                 Image(systemName: entry.requireTouchID ? "touchid" : "key.fill")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .help(entry.requireTouchID ? "Wachtwoord bewaard, Touch ID vereist" : "Wachtwoord bewaard")
+                    .help(entry.requireTouchID ? Text("Password saved, Touch ID required") : Text("Password saved"))
             }
             if let session {
                 StatusDot(status: session.status)

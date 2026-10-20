@@ -53,10 +53,9 @@ final class AddressBook: ObservableObject {
         } catch {
             // reservekopie, zodat een volgende bewaring het origineel niet overschrijft
             let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
-            let backup = url.deletingPathExtension().appendingPathExtension("onleesbaar-\(stamp).json")
+            let backup = url.deletingPathExtension().appendingPathExtension("unreadable-\(stamp).json")
             try? FileManager.default.copyItem(at: url, to: backup)
-            loadError = "Adresboek kon niet gelezen worden (\(error.localizedDescription)). "
-                + "Een kopie staat in \(backup.lastPathComponent)."
+            loadError = String(localized: "The address book could not be read (\(error.localizedDescription)). A copy is in \(backup.lastPathComponent).")
         }
     }
 
@@ -68,7 +67,7 @@ final class AddressBook: ObservableObject {
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             try encoder.encode(entries).write(to: url, options: .atomic)
         } catch {
-            loadError = "Adresboek kon niet bewaard worden: \(error.localizedDescription)"
+            loadError = String(localized: "The address book could not be saved: \(error.localizedDescription)")
         }
     }
 }

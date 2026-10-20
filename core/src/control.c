@@ -110,7 +110,7 @@ static bool cmd_screenshot(rdpmcp_session* s, int fd)
 	pthread_mutex_unlock(&s->fb_lock);
 
 	if (!copy)
-		return reply(fd, "ERR no-frame nog geen beeld ontvangen");
+		return reply(fd, "ERR no-frame no image received yet");
 	const bool ok = reply(fd, "OK %d %d %zu", w, h, len) && write_all(fd, copy, len);
 	free(copy);
 	return ok;
@@ -123,12 +123,12 @@ static bool clip_error(int fd, int rc)
 	switch (rc)
 	{
 		case CLIP_DISABLED:
-			return reply(fd, "ERR clipboard-disabled klembord staat uit (--no-clipboard of -clipboard)");
+			return reply(fd, "ERR clipboard-disabled clipboard is off (--no-clipboard or -clipboard)");
 		case CLIP_LOCAL_PRIVATE:
-			return reply(fd, "ERR clipboard-local het klembord bevat inhoud van de Mac van de "
-			                 "gebruiker; die wordt niet gedeeld met de AI");
+			return reply(fd, "ERR clipboard-local the clipboard holds content from the user's Mac, "
+			                 "which is not shared with the AI");
 		default:
-			return reply(fd, "ERR clipboard-not-ready het klembordkanaal is (nog) niet actief");
+			return reply(fd, "ERR clipboard-not-ready the clipboard channel is not active (yet)");
 	}
 }
 
@@ -150,7 +150,7 @@ static bool cmd_clipset(rdpmcp_session* s, int fd, FILE* in, const char* line)
 	if (sscanf(line, "%*s %zu", &len) != 1 || len > CLIP_MAX_BYTES)
 	{
 		/* payload niet betrouwbaar over te slaan: melden en verbinding sluiten */
-		reply(fd, "ERR syntax CLIPSET <bytes> gevolgd door de UTF-8-tekst (max 4 MiB)");
+		reply(fd, "ERR syntax CLIPSET <bytes> followed by the UTF-8 text (max 4 MiB)");
 		return false;
 	}
 
@@ -167,11 +167,11 @@ static bool cmd_clipset(rdpmcp_session* s, int fd, FILE* in, const char* line)
 	/* payload altijd inlezen, ook bij een weigering, zodat het protocol synchroon blijft */
 	bool ok;
 	if (!atomic_load(&s->connected))
-		ok = reply(fd, "ERR not-connected sessie is niet verbonden");
+		ok = reply(fd, "ERR not-connected session is not connected");
 	else if (!atomic_load(&s->ai_enabled))
-		ok = reply(fd, "ERR ai-disabled de gebruiker heeft AI-besturing uitgeschakeld");
+		ok = reply(fd, "ERR ai-disabled the user has turned AI control off");
 	else if (memchr(text, '\0', len))
-		ok = reply(fd, "ERR syntax tekst bevat een NUL-teken");
+		ok = reply(fd, "ERR syntax text contains a NUL character");
 	else
 	{
 		const int rc = rdpmcp_clip_set_ai(s, text);
@@ -193,7 +193,7 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 	int y = 0;
 
 	if (sscanf(line, "%15s", cmd) != 1)
-		return reply(fd, "ERR syntax lege regel");
+		return reply(fd, "ERR syntax empty line");
 
 	if (strcmp(cmd, "INFO") == 0)
 	{
@@ -216,9 +216,9 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 
 	/* Alles hieronder is invoer: enkel als de gebruiker AI-besturing toelaat */
 	if (!atomic_load(&s->connected))
-		return reply(fd, "ERR not-connected sessie is niet verbonden");
+		return reply(fd, "ERR not-connected session is not connected");
 	if (!atomic_load(&s->ai_enabled))
-		return reply(fd, "ERR ai-disabled de gebruiker heeft AI-besturing uitgeschakeld");
+		return reply(fd, "ERR ai-disabled the user has turned AI control off");
 
 	if (strcmp(cmd, "CLIPGET") == 0)
 		return cmd_clipget(s, fd);
@@ -282,7 +282,7 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 		if (sscanf(line, "%*s %x", &code) != 1 || code == 0 || code > 0xFFFF)
 			return reply(fd, "ERR syntax UNICODE <utf16-codeunit-hex>");
 		if (!freerdp_settings_get_bool(s->common.context.settings, FreeRDP_UnicodeInput))
-			return reply(fd, "ERR unicode-unsupported de server ondersteunt geen Unicode-invoer");
+			return reply(fd, "ERR unicode-unsupported the server does not support Unicode input");
 		pthread_mutex_lock(&s->input_lock);
 		freerdp_input_send_unicode_keyboard_event(s->common.context.input, 0, (UINT16)code);
 		freerdp_input_send_unicode_keyboard_event(s->common.context.input, KBD_FLAGS_RELEASE,
@@ -292,7 +292,7 @@ static bool handle_line(rdpmcp_session* s, int fd, FILE* in, char* line)
 		return reply(fd, "OK");
 	}
 
-	return reply(fd, "ERR unknown-command onbekend commando '%s'", cmd);
+	return reply(fd, "ERR unknown-command unknown command '%s'", cmd);
 }
 
 static void* conn_thread(void* arg)

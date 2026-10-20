@@ -13,6 +13,9 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/RDPMCP"
 cp mac/Info.plist "$APP/Contents/Info.plist"
+cp -R mac/Resources/*.lproj "$APP/Contents/Resources/"
+# .strings controleren: een syntaxfout laat de vertaling stil wegvallen
+for f in "$APP"/Contents/Resources/*.lproj/*.strings; do plutil -lint -s "$f"; done
 
 # Ad-hoc handtekening: macOS vraagt na elke nieuwe build één keer of de app
 # bij de sleutelhanger mag.

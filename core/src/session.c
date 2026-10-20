@@ -644,7 +644,7 @@ static void* rdp_thread(void* arg)
 bool rdpmcp_session_start(rdpmcp_session* s)
 {
 	if (!rdpmcp_control_start(s))
-		fprintf(stderr, "rdp-mcp: control-socket niet gestart, MCP werkt niet voor %s\n", s->name);
+		fprintf(stderr, "rdp-mcp: control socket not started, MCP will not work for %s\n", s->name);
 	if (pthread_create(&s->rdp_thread, NULL, rdp_thread, s) != 0)
 	{
 		rdpmcp_control_stop(s);

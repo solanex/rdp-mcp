@@ -119,8 +119,8 @@ static void apply_pointer(app_t* a, pointer_msg* m)
 static void update_title(app_t* a)
 {
 	char title[512];
-	snprintf(title, sizeof(title), "rdp-mcp — %s — AI-besturing %s (Ctrl+Alt+Shift+A)", a->host,
-	         rdpmcp_get_ai_enabled(a->session) ? "AAN" : "UIT");
+	snprintf(title, sizeof(title), "rdp-mcp — %s — AI control %s (Ctrl+Alt+Shift+A)", a->host,
+	         rdpmcp_get_ai_enabled(a->session) ? "ON" : "OFF");
 	SDL_SetWindowTitle(a->window, title);
 }
 
@@ -139,7 +139,7 @@ static void handle_input(app_t* a, SDL_Event* ev)
 			{
 				rdpmcp_set_ai_enabled(s, !rdpmcp_get_ai_enabled(s));
 				update_title(a);
-				printf("AI-besturing %s\n", rdpmcp_get_ai_enabled(s) ? "aan" : "uit");
+				printf("AI control %s\n", rdpmcp_get_ai_enabled(s) ? "on" : "off");
 				fflush(stdout);
 				return;
 			}
@@ -298,12 +298,12 @@ static bool render(app_t* a)
 
 static void usage_extra(void)
 {
-	printf("\nrdp-mcp-opties (bovenop de gewone FreeRDP-opties):\n"
-	       "  --ai-off       start met AI-besturing uitgeschakeld\n"
-	       "  --cmd-as-win   Cmd-toets = Windows-toets (standaard: Cmd = Ctrl)\n"
-	       "  --no-clipboard geen klembord delen (ook niet voor de AI)\n"
-	       "\nVoorbeeld: rdp-mcp-client /v:server.example.be /u:jan /d:DOMEIN\n"
-	       "Sneltoets in het venster: Ctrl+Alt+Shift+A zet AI-besturing aan/uit.\n");
+	printf("\nrdp-mcp options (on top of the usual FreeRDP options):\n"
+	       "  --ai-off       start with AI control disabled\n"
+	       "  --cmd-as-win   Cmd key = Windows key (default: Cmd = Ctrl)\n"
+	       "  --no-clipboard don't share the clipboard (not even with the AI)\n"
+	       "\nExample: rdp-mcp-client /v:server.example.com /u:jane /d:EXAMPLE\n"
+	       "Shortcut in the window: Ctrl+Alt+Shift+A turns AI control on/off.\n");
 }
 
 int main(int argc, char* argv[])
@@ -386,7 +386,7 @@ int main(int argc, char* argv[])
 		SDL_free(text);
 	}
 	if (rdpmcp_session_socket_path(a.session))
-		printf("MCP-control-socket: %s\n", rdpmcp_session_socket_path(a.session));
+		printf("MCP control socket: %s\n", rdpmcp_session_socket_path(a.session));
 	fflush(stdout);
 
 	rc = 0;
@@ -412,14 +412,14 @@ int main(int argc, char* argv[])
 					char* msg = ev.user.data1;
 					if (ev.user.code == RDPMCP_STATE_FAILED)
 					{
-						fprintf(stderr, "Verbinding mislukt of verbroken: %s\n", msg ? msg : "?");
+						fprintf(stderr, "Connection failed or lost: %s\n", msg ? msg : "?");
 						rc = 1;
 						running = false;
 					}
 					else if (ev.user.code == RDPMCP_STATE_DISCONNECTED)
 					{
 						if (msg)
-							printf("Verbinding gesloten: %s\n", msg);
+							printf("Connection closed: %s\n", msg);
 						running = false;
 					}
 					free(msg);

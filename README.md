@@ -176,7 +176,7 @@ rdp-mcp-client /v:server.example.com /u:jane /d:EXAMPLE /kbd:layout:0x80C
 ```
 
 It asks for the password in the terminal. After connecting, the window opens and it
-prints `MCP-control-socket: ~/.rdp-mcp/<pid>-1.sock`. The window title shows whether
+prints `MCP control socket: ~/.rdp-mcp/<pid>-1.sock`. The window title shows whether
 AI control is on or off; Ctrl+Alt+Shift+A (Ctrl+Option+Shift+A on the Mac) toggles
 it.
 

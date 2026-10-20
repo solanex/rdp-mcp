@@ -54,7 +54,7 @@ class Connection:
         self._sock.sendall(line.encode() + b"\n")
         reply = self._file.readline()
         if not reply:
-            raise ClientError("disconnected", "de client sloot de verbinding")
+            raise ClientError("disconnected", "the client closed the connection")
         reply = reply.rstrip(b"\r\n")
         if reply.startswith(b"ERR"):
             parts = reply.decode(errors="replace").split(" ", 2)
@@ -63,7 +63,7 @@ class Connection:
                 parts[2] if len(parts) > 2 else "",
             )
         if not reply.startswith(b"OK"):
-            raise ClientError("protocol", f"onverwacht antwoord: {reply!r}")
+            raise ClientError("protocol", f"unexpected reply: {reply!r}")
         return reply[3:]
 
     def cmd(self, line: str) -> str:
@@ -79,14 +79,14 @@ class Connection:
         w, h, n = (int(v) for v in self._send("SCREENSHOT").split())
         data = self._file.read(n)
         if len(data) != n:
-            raise ClientError("protocol", "screenshot onvolledig ontvangen")
+            raise ClientError("protocol", "screenshot received incompletely")
         return w, h, data
 
     def clip_get(self) -> str:
         n = int(self._send("CLIPGET").strip() or 0)
         data = self._file.read(n) if n else b""
         if len(data) != n:
-            raise ClientError("protocol", "klembord onvolledig ontvangen")
+            raise ClientError("protocol", "clipboard received incompletely")
         return data.decode("utf-8", errors="replace")
 
     def clip_set(self, text: str) -> None:
@@ -97,7 +97,7 @@ class Connection:
             parts = reply.decode(errors="replace").split(" ", 2)
             raise ClientError(parts[1] if len(parts) > 1 else "error", parts[2] if len(parts) > 2 else "")
         if not reply.startswith(b"OK"):
-            raise ClientError("protocol", f"onverwacht antwoord: {reply!r}")
+            raise ClientError("protocol", f"unexpected reply: {reply!r}")
 
     def close(self) -> None:
         self._file.close()
@@ -117,7 +117,7 @@ class Session:
             sock.connect(str(self.path))
         except OSError as e:
             sock.close()
-            raise ClientError("unreachable", f"sessie {self.id} is niet bereikbaar ({e})") from e
+            raise ClientError("unreachable", f"session {self.id} is unreachable ({e})") from e
         conn = Connection(sock)
         try:
             yield conn

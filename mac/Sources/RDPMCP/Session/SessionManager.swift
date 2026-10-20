@@ -49,7 +49,7 @@ final class SessionManager: ObservableObject {
         var password: String?
         if entry.hasSavedPassword {
             if entry.requireTouchID {
-                let ok = await Keychain.authenticate(reason: "het wachtwoord voor \(entry.displayName) gebruiken")
+                let ok = await Keychain.authenticate(reason: String(localized: "use the password for \(entry.displayName)"))
                 guard ok else { return }
             }
             password = Keychain.load(account: entry.id)
@@ -174,7 +174,7 @@ final class SessionManager: ObservableObject {
             if stored.domain.isEmpty { stored.domain = domain }
             book.upsert(stored)
         } catch {
-            selected?.show(notice: "Wachtwoord niet bewaard: \(error.localizedDescription)")
+            selected?.show(notice: String(localized: "Password not saved: \(error.localizedDescription)"))
         }
     }
 

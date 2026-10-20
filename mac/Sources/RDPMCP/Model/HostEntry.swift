@@ -59,17 +59,17 @@ struct HostEntry: Codable, Identifiable, Hashable {
     var isAutoSize: Bool { width == 0 || height == 0 }
 
     static let keyboardLayouts: [(name: String, id: Int)] = [
-        ("Standaard", 0),
-        ("Belgisch-Frans", 0x80C),
-        ("Belgisch (punt)", 0x813),
-        ("Belgisch (komma)", 0x1080C),
-        ("Frans", 0x40C),
-        ("Nederlands", 0x413),
-        ("VS", 0x409),
+        (String(localized: "Default"), 0),
+        (String(localized: "Belgian French"), 0x80C),
+        (String(localized: "Belgian (Period)"), 0x813),
+        (String(localized: "Belgian (Comma)"), 0x1080C),
+        (String(localized: "French"), 0x40C),
+        (String(localized: "Dutch"), 0x413),
+        (String(localized: "US"), 0x409),
     ]
 
     static let resolutions: [(name: String, w: Int, h: Int)] = [
-        ("Automatisch (tabblad)", 0, 0),
+        (String(localized: "Automatic (tab size)"), 0, 0),
         ("1280 × 800", 1280, 800),
         ("1440 × 900", 1440, 900),
         ("1600 × 900", 1600, 900),

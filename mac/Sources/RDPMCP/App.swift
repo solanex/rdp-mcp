@@ -24,29 +24,29 @@ struct RDPMCPApp: App {
         }
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("Nieuwe host…") { NotificationCenter.default.post(name: .newHost, object: nil) }
+                Button("New Host…") { NotificationCenter.default.post(name: .newHost, object: nil) }
                     .keyboardShortcut("n", modifiers: [.command, .option])
             }
-            CommandMenu("Sessie") {
-                Button("Volgende tab") { manager.selectNext(1) }
+            CommandMenu("Session") {
+                Button("Next Tab") { manager.selectNext(1) }
                     .keyboardShortcut(.rightArrow, modifiers: [.command, .option])
-                Button("Vorige tab") { manager.selectNext(-1) }
+                Button("Previous Tab") { manager.selectNext(-1) }
                     .keyboardShortcut(.leftArrow, modifiers: [.command, .option])
-                Button("Naar eigen venster") {
+                Button("Move to Own Window") {
                     if let s = manager.selected { manager.detach(s) }
                 }
                 .keyboardShortcut("d", modifiers: [.command, .option])
                 Divider()
-                Button("AI-besturing aan/uit") {
+                Button("Toggle AI Control") {
                     if let s = manager.selected { s.setAI(!s.aiEnabled) }
                 }
                 .keyboardShortcut("a", modifiers: [.command, .option])
-                Button("Opnieuw verbinden") {
+                Button("Reconnect") {
                     if let s = manager.selected { Task { await manager.reconnect(s) } }
                 }
                 .keyboardShortcut("r", modifiers: [.command, .option])
                 Divider()
-                Button("Tab sluiten") { manager.closeSelected() }
+                Button("Close Tab") { manager.closeSelected() }
                     .keyboardShortcut("w", modifiers: [.command, .option])
             }
         }
@@ -62,12 +62,12 @@ struct SettingsView: View {
 
     var body: some View {
         Form {
-            Toggle("Cmd-toets werkt als Windows-toets", isOn: $cmdAsWin)
-            Text("Standaard werkt Cmd als Ctrl, zodat Cmd+C en Cmd+V doen wat je verwacht. Geldt voor nieuwe tabs.")
+            Toggle("Cmd key acts as Windows key", isOn: $cmdAsWin)
+            Text("By default Cmd acts as Ctrl, so Cmd+C and Cmd+V do what you expect. Applies to new tabs.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
             Divider()
-            Text("Sneltoetsen in een sessie gaan naar Windows, behalve ⌥⌘-combinaties (tabs), ⌃⌘F (volledig scherm) en ⌘Q.")
+            Text("Shortcuts in a session go to Windows, except ⌥⌘ combinations (tabs), ⌃⌘F (full screen) and ⌘Q.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -89,10 +89,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         guard let manager = Self.manager, !manager.sessions.isEmpty else { return .terminateNow }
         let alert = NSAlert()
-        alert.messageText = "\(manager.sessions.count) open sessie(s) sluiten?"
-        alert.informativeText = "De verbindingen worden verbroken. Op Windows blijf je aangemeld."
-        alert.addButton(withTitle: "Afsluiten")
-        alert.addButton(withTitle: "Annuleren")
+        alert.messageText = String(localized: "Close \(manager.sessions.count) open session(s)?")
+        alert.informativeText = String(localized: "The connections will be closed. You stay signed in on Windows.")
+        alert.addButton(withTitle: String(localized: "Quit"))
+        alert.addButton(withTitle: String(localized: "Cancel"))
         return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 

@@ -1,9 +1,9 @@
-"""MCP-server: geeft een AI-agent ogen en handen in een rdp-mcp-sessie.
+"""MCP server: gives an AI agent eyes and hands in an rdp-mcp session.
 
-Alle coördinaten in de tools zijn pixels in de screenshot zoals de agent die
-krijgt. De screenshot wordt verkleind tot de langste zijde maximaal
-RDP_MCP_MAX_EDGE pixels is (standaard 1280); de server rekent zelf terug naar
-remote coördinaten.
+All coordinates in the tools are pixels in the screenshot as the agent receives
+it. The screenshot is scaled down until its longest side is at most
+RDP_MCP_MAX_EDGE pixels (default 1280); the server converts back to remote
+coordinates itself.
 """
 
 from __future__ import annotations
@@ -33,10 +33,10 @@ _last_input = 0.0
 mcp = MCPServer(
     "rdp-mcp",
     instructions=(
-        "Bestuurt een remote desktop (RDP) die de gebruiker live meevolgt in het "
-        "rdp-mcp-venster. Neem eerst een screenshot; alle coördinaten zijn pixels "
-        "in de laatste screenshot. Neem na acties opnieuw een screenshot om het "
-        "resultaat te controleren. Wachtwoorden typt de gebruiker zelf."
+        "Controls a remote desktop (RDP) that the user watches live in the rdp-mcp "
+        "window. Take a screenshot first; all coordinates are pixels in the latest "
+        "screenshot. Take another screenshot after actions to check the result. "
+        "The user types passwords themselves."
     ),
 )
 
@@ -45,25 +45,25 @@ def _pick(session: str | None) -> tuple[Session, SessionInfo]:
     sessions = list_sessions()
     if not sessions:
         raise ToolError(
-            "geen actieve rdp-mcp-sessie gevonden. Vraag de gebruiker om de "
-            "client te starten (rdp-mcp-client /v:host /u:gebruiker)."
+            "no active rdp-mcp session found. Ask the user to connect to a host in "
+            "the RDP MCP app (or start rdp-mcp-client /v:host /u:user)."
         )
     if session is None:
         if len(sessions) > 1:
             ids = ", ".join(f"{i.id} ({i.name})" for _, i in sessions)
-            raise ToolError(f"meerdere sessies actief, geef 'session' op (id of naam): {ids}")
+            raise ToolError(f"several sessions are active, pass 'session' (id or name): {ids}")
         found = sessions[0]
     else:
         matches = [x for x in sessions if x[1].id == session] or [
             x for x in sessions if x[1].name.lower() == session.lower()
         ]
         if not matches:
-            raise ToolError(f"sessie '{session}' niet gevonden")
+            raise ToolError(f"session '{session}' not found")
         if len(matches) > 1:
-            raise ToolError(f"meerdere sessies heten '{session}', gebruik het id")
+            raise ToolError(f"several sessions are named '{session}', use the id")
         found = matches[0]
     if found[1].width <= 0:
-        raise ToolError(f"sessie {found[1].name} is nog aan het verbinden; probeer zo opnieuw")
+        raise ToolError(f"session {found[1].name} is still connecting; try again shortly")
     return found
 
 
@@ -81,13 +81,13 @@ def _to_remote(info: SessionInfo, x: float, y: float) -> tuple[int, int]:
 def _tool_error(e: ClientError) -> ToolError:
     if e.code == "ai-disabled":
         return ToolError(
-            "de gebruiker heeft AI-besturing uitgeschakeld in het rdp-mcp-venster "
-            "(Ctrl+Alt+Shift+A). Vraag de gebruiker om ze terug aan te zetten."
+            "the user has turned AI control off in the rdp-mcp window "
+            "(Ctrl+Alt+Shift+A). Ask the user to turn it back on."
         )
     if e.code == "clipboard-local":
         return ToolError(
-            "het klembord bevat iets dat de gebruiker op de eigen Mac kopieerde; dat wordt "
-            "bewust niet gedeeld. Kopieer eerst iets in de remote sessie (bv. ctrl+c)."
+            "the clipboard holds something the user copied on their own Mac; that is "
+            "deliberately not shared. Copy something in the remote session first (e.g. ctrl+c)."
         )
     return ToolError(str(e))
 
@@ -123,9 +123,9 @@ def _click(conn: Connection, button: str, rx: int, ry: int, clicks: int) -> None
 
 @mcp.tool()
 def list_rdp_sessions() -> list[dict]:
-    """Toon de actieve rdp-mcp-sessies (id, naam, host, resolutie, AI-besturing aan/uit).
+    """List the active rdp-mcp sessions (id, name, host, resolution, AI control on/off).
 
-    Geef bij de andere tools 'session' op met het id of de naam als er meerdere zijn.
+    When there are several, pass 'session' to the other tools with the id or the name.
     """
     return [
         {
@@ -143,9 +143,9 @@ def list_rdp_sessions() -> list[dict]:
 
 @mcp.tool(structured_output=False)
 def screenshot(session: str | None = None) -> list:
-    """Neem een screenshot van de remote desktop.
+    """Take a screenshot of the remote desktop.
 
-    Coördinaten voor de andere tools zijn pixels in deze afbeelding.
+    Coordinates for the other tools are pixels in this image.
     """
     s, info = _pick(session)
     pending = SETTLE_SECONDS - (time.monotonic() - _last_input)
@@ -165,8 +165,8 @@ def screenshot(session: str | None = None) -> list:
         img.save(buf, format="PNG", optimize=True)
         fmt = "png"
     note = (
-        f"Sessie {info.id} '{info.name}' ({info.host}), remote {w}x{h}, screenshot "
-        f"{img.width}x{img.height}. AI-besturing: {'aan' if info.ai_enabled else 'UIT'}."
+        f"Session {info.id} '{info.name}' ({info.host}), remote {w}x{h}, screenshot "
+        f"{img.width}x{img.height}. AI control: {'on' if info.ai_enabled else 'OFF'}."
     )
     return [note, Image(data=buf.getvalue(), format=fmt)]
 
@@ -179,22 +179,22 @@ def click(
     clicks: int = 1,
     session: str | None = None,
 ) -> str:
-    """Klik op (x, y). clicks=2 voor een dubbelklik."""
+    """Click at (x, y). clicks=2 for a double-click."""
     s, info = _pick(session)
     rx, ry = _to_remote(info, x, y)
     with s.connect() as conn:
         _click(conn, button, rx, ry, max(1, min(clicks, 3)))
-    return f"{button}-klik x{clicks} op ({x}, {y})"
+    return f"{button} click x{clicks} at ({x}, {y})"
 
 
 @mcp.tool()
 def move_mouse(x: int, y: int, session: str | None = None) -> str:
-    """Beweeg de muis naar (x, y) zonder te klikken (bv. voor hover-menu's)."""
+    """Move the mouse to (x, y) without clicking (e.g. for hover menus)."""
     s, info = _pick(session)
     rx, ry = _to_remote(info, x, y)
     with s.connect() as conn:
         _run(conn, f"MOVE {rx} {ry}")
-    return f"muis op ({x}, {y})"
+    return f"mouse at ({x}, {y})"
 
 
 @mcp.tool()
@@ -206,7 +206,7 @@ def drag(
     button: Literal["left", "right", "middle"] = "left",
     session: str | None = None,
 ) -> str:
-    """Sleep met ingedrukte muisknop van (start_x, start_y) naar (end_x, end_y)."""
+    """Drag with the mouse button held from (start_x, start_y) to (end_x, end_y)."""
     s, info = _pick(session)
     sx, sy = _to_remote(info, start_x, start_y)
     ex, ey = _to_remote(info, end_x, end_y)
@@ -220,7 +220,7 @@ def drag(
             _run(conn, f"MOVE {sx + (ex - sx) * i // steps} {sy + (ey - sy) * i // steps}")
         time.sleep(0.05)
         _run(conn, f"BUTTON {button} up {ex} {ey}")
-    return f"gesleept van ({start_x}, {start_y}) naar ({end_x}, {end_y})"
+    return f"dragged from ({start_x}, {start_y}) to ({end_x}, {end_y})"
 
 
 @mcp.tool()
@@ -231,7 +231,7 @@ def scroll(
     amount: int = 3,
     session: str | None = None,
 ) -> str:
-    """Scroll met het muiswiel op (x, y). amount = aantal 'klikjes' van het wiel."""
+    """Scroll the mouse wheel at (x, y). amount = number of wheel notches."""
     s, info = _pick(session)
     rx, ry = _to_remote(info, x, y)
     amount = max(1, min(amount, 30))
@@ -240,22 +240,22 @@ def scroll(
     with s.connect() as conn:
         _run(conn, f"MOVE {rx} {ry}")
         _run(conn, f"WHEEL {axis} {notches} {rx} {ry}")
-    return f"{amount}x gescrold naar {direction} op ({x}, {y})"
+    return f"scrolled {direction} {amount}x at ({x}, {y})"
 
 
 @mcp.tool()
 def type_text(text: str, session: str | None = None) -> str:
-    """Typ tekst in het veld dat focus heeft. Onafhankelijk van de toetsenbordindeling.
+    """Type text into the focused field. Independent of the keyboard layout.
 
-    Een newline wordt Enter, een tab wordt Tab. Gebruik press_keys voor sneltoetsen.
+    A newline becomes Enter, a tab becomes Tab. Use press_keys for shortcuts.
     """
     s, info = _pick(session)
     if not info.unicode:
         bad = sorted({ch for ch in text if ch not in "\n\t\r" and keymap.char_to_scancodes(ch) is None})
         if bad:
             raise ToolError(
-                "deze server ondersteunt geen Unicode-invoer; zonder Unicode kan ik enkel "
-                f"letters, cijfers en spaties typen. Niet mogelijk: {' '.join(bad)}"
+                "this server does not support Unicode input; without Unicode only letters, "
+                f"digits and spaces can be typed. Not possible: {' '.join(bad)}"
             )
     with s.connect() as conn:
         for ch in text:
@@ -272,18 +272,18 @@ def type_text(text: str, session: str | None = None) -> str:
                 for i in range(0, len(units), 2):
                     _run(conn, f"UNICODE {int.from_bytes(units[i:i + 2], 'little'):x}")
             time.sleep(0.005)
-    return f"{len(text)} tekens getypt"
+    return f"typed {len(text)} characters"
 
 
 @mcp.tool()
 def press_keys(keys: str, session: str | None = None) -> str:
-    """Druk een toets of sneltoets in, bv. 'enter', 'ctrl+c', 'win+r', 'alt+f4',
-    'ctrl+alt+delete'. Meerdere na elkaar scheiden met een spatie: 'tab tab enter'.
+    """Press a key or shortcut, e.g. 'enter', 'ctrl+c', 'win+r', 'alt+f4',
+    'ctrl+alt+delete'. Separate several in a row with a space: 'tab tab enter'.
     """
     s, _ = _pick(session)
     combos = keys.split()
     if not combos:
-        raise ToolError("geen toetsen opgegeven")
+        raise ToolError("no keys given")
     try:
         parsed = [keymap.parse_combo(c) for c in combos]
     except ValueError as e:
@@ -292,14 +292,14 @@ def press_keys(keys: str, session: str | None = None) -> str:
         for codes in parsed:
             _press(conn, codes)
             time.sleep(0.05)
-    return f"ingedrukt: {keys}"
+    return f"pressed: {keys}"
 
 
 @mcp.tool()
 def get_clipboard(session: str | None = None) -> str:
-    """Lees de tekst op het klembord van de remote sessie, bv. na selecteren + press_keys('ctrl+c').
+    """Read the text on the remote session's clipboard, e.g. after selecting + press_keys('ctrl+c').
 
-    Handig om tekst uit een venster te halen zonder hem van een screenshot af te lezen.
+    Useful to get text out of a window without reading it off a screenshot.
     """
     s, _ = _pick(session)
     pending = SETTLE_SECONDS - (time.monotonic() - _last_input)
@@ -314,10 +314,10 @@ def get_clipboard(session: str | None = None) -> str:
 
 @mcp.tool()
 def set_clipboard(text: str, session: str | None = None) -> str:
-    """Zet tekst op het klembord van de remote sessie. Plak daarna met press_keys('ctrl+v').
+    """Put text on the remote session's clipboard. Then paste with press_keys('ctrl+v').
 
-    Veel sneller dan type_text voor lange teksten, en elk teken komt exact over.
-    Het klembord van de Mac van de gebruiker blijft ongemoeid.
+    Much faster than type_text for long texts, and every character arrives exactly.
+    The clipboard on the user's Mac is left alone.
     """
     global _last_input
     s, _ = _pick(session)
@@ -327,15 +327,15 @@ def set_clipboard(text: str, session: str | None = None) -> str:
         except ClientError as e:
             raise _tool_error(e) from e
     _last_input = time.monotonic()
-    return f"{len(text)} tekens op het remote klembord gezet; plak met press_keys('ctrl+v')"
+    return f"put {len(text)} characters on the remote clipboard; paste with press_keys('ctrl+v')"
 
 
 @mcp.tool()
 def wait(seconds: float = 1.0) -> str:
-    """Wacht even, bv. tot een venster of programma geladen is (max 30 s)."""
+    """Wait a moment, e.g. until a window or program has loaded (max 30 s)."""
     seconds = max(0.0, min(seconds, 30.0))
     time.sleep(seconds)
-    return f"{seconds:g} s gewacht"
+    return f"waited {seconds:g} s"
 
 
 def main() -> None:

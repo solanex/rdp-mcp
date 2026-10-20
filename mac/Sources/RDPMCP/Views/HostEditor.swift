@@ -19,29 +19,29 @@ struct HostEditor: View {
     var body: some View {
         VStack(spacing: 0) {
             Form {
-                Section("Verbinding") {
-                    TextField("Naam", text: $entry.name, prompt: Text("bv. Lokaal 2.14"))
-                    TextField("Groep", text: $entry.group, prompt: Text("bv. School"))
-                    TextField("Host", text: $entry.host, prompt: Text("server.voorbeeld.be of IP"))
-                    TextField("Poort", value: $entry.port, format: .number.grouping(.never))
-                    TextField("RD Gateway", text: $entry.gateway, prompt: Text("optioneel"))
+                Section("Connection") {
+                    TextField("Name", text: $entry.name, prompt: Text("e.g. Room 2.14"))
+                    TextField("Group", text: $entry.group, prompt: Text("e.g. Office"))
+                    TextField("Host", text: $entry.host, prompt: Text("server.example.com or IP"))
+                    TextField("Port", value: $entry.port, format: .number.grouping(.never))
+                    TextField("RD Gateway", text: $entry.gateway, prompt: Text("optional"))
                 }
 
                 Section {
-                    TextField("Gebruikersnaam", text: $entry.username)
-                    TextField("Domein", text: $entry.domain, prompt: Text("bv. VOORBEELD"))
-                    Toggle("Wachtwoord bewaren in de sleutelhanger", isOn: $savePassword)
+                    TextField("Username", text: $entry.username)
+                    TextField("Domain", text: $entry.domain, prompt: Text("e.g. EXAMPLE"))
+                    Toggle("Save password in the keychain", isOn: $savePassword)
                         .onChange(of: savePassword) { _, on in
                             if !on { password = "" }
                         }
                     if savePassword {
-                        SecureField("Wachtwoord", text: $password,
-                                    prompt: Text(entry.hasSavedPassword ? "•••••••• (bewaard; leeg laten om te behouden)"
-                                                                        : "wachtwoord"))
-                        Toggle("Touch ID vragen voor het bewaarde wachtwoord", isOn: $entry.requireTouchID)
+                        SecureField("Password", text: $password,
+                                    prompt: entry.hasSavedPassword ? Text("•••••••• (saved; leave empty to keep)")
+                                                                   : Text("password"))
+                        Toggle("Require Touch ID for the saved password", isOn: $entry.requireTouchID)
                     }
                 } header: {
-                    Text("Aanmelden")
+                    Text("Sign In")
                 } footer: {
                     Text(passwordFooter)
                         .font(.caption)
@@ -49,35 +49,35 @@ struct HostEditor: View {
                 }
 
                 Section {
-                    Toggle("Geluid op de Mac afspelen", isOn: $entry.sound)
-                    LabeledContent("Gedeelde map") {
+                    Toggle("Play sound on the Mac", isOn: $entry.sound)
+                    LabeledContent("Shared folder") {
                         HStack {
-                            Text(entry.sharedFolderPath.isEmpty ? "geen"
+                            Text(entry.sharedFolderPath.isEmpty ? String(localized: "none")
                                  : (entry.sharedFolderPath as NSString).abbreviatingWithTildeInPath)
                                 .foregroundStyle(entry.sharedFolderPath.isEmpty ? .secondary : .primary)
                                 .lineLimit(1)
                                 .truncationMode(.middle)
-                            Button("Kies…", action: chooseFolder)
+                            Button("Choose…", action: chooseFolder)
                             if !entry.sharedFolderPath.isEmpty {
-                                Button("Geen") { entry.sharedFolderPath = "" }
+                                Button("None") { entry.sharedFolderPath = "" }
                             }
                         }
                     }
                     if !entry.sharedFolderPath.isEmpty {
-                        TextField("Naam in Windows", text: $entry.sharedFolderName, prompt: Text("Mac"))
+                        TextField("Name in Windows", text: $entry.sharedFolderName, prompt: Text("Mac"))
                     }
                 } header: {
-                    Text("Delen")
+                    Text("Sharing")
                 } footer: {
                     if !entry.sharedFolderPath.isEmpty {
-                        Text("De map verschijnt in Windows onder Deze pc. Let op: met AI-besturing aan kan de AI via de Verkenner ook bij de bestanden in deze map.")
+                        Text("The folder shows up in Windows under This PC. Note: with AI control on, the AI can also reach the files in this folder through Explorer.")
                             .font(.caption)
                             .foregroundStyle(.orange)
                     }
                 }
 
-                Section("Scherm en invoer") {
-                    Picker("Resolutie", selection: Binding(
+                Section("Display and Input") {
+                    Picker("Resolution", selection: Binding(
                         get: { "\(entry.width)x\(entry.height)" },
                         set: { value in
                             let parts = value.split(separator: "x").compactMap { Int($0) }
@@ -87,14 +87,14 @@ struct HostEditor: View {
                             Text(r.name).tag("\(r.w)x\(r.h)")
                         }
                     }
-                    Picker("Toetsenbord (Windows)", selection: $entry.keyboardLayout) {
+                    Picker("Keyboard (Windows)", selection: $entry.keyboardLayout) {
                         ForEach(HostEntry.keyboardLayouts, id: \.id) { k in
                             Text(k.name).tag(k.id)
                         }
                     }
-                    Toggle("Klembord delen", isOn: $entry.clipboard)
-                    Toggle("AI-besturing aan bij verbinden", isOn: $entry.aiEnabledAtStart)
-                    Toggle("Certificaat niet controleren", isOn: $entry.ignoreCertificate)
+                    Toggle("Share clipboard", isOn: $entry.clipboard)
+                    Toggle("AI control on when connecting", isOn: $entry.aiEnabledAtStart)
+                    Toggle("Don’t verify certificate", isOn: $entry.ignoreCertificate)
                 }
             }
             .formStyle(.grouped)
@@ -107,15 +107,15 @@ struct HostEditor: View {
 
             HStack {
                 if !isNew {
-                    Button("Verwijderen", role: .destructive) {
+                    Button("Delete", role: .destructive) {
                         book.delete(entry)
                         dismiss()
                     }
                 }
                 Spacer()
-                Button("Annuleren", role: .cancel) { dismiss() }
+                Button("Cancel", role: .cancel) { dismiss() }
                     .keyboardShortcut(.cancelAction)
-                Button(isNew ? "Toevoegen" : "Bewaren") { save() }
+                Button(isNew ? String(localized: "Add") : String(localized: "Save")) { save() }
                     .keyboardShortcut(.defaultAction)
                     .disabled(entry.host.trimmingCharacters(in: .whitespaces).isEmpty || missingPassword)
             }
@@ -129,8 +129,8 @@ struct HostEditor: View {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "Delen"
-        panel.message = "Kies de map die in Windows als schijf verschijnt"
+        panel.prompt = String(localized: "Share")
+        panel.message = String(localized: "Choose the folder that appears as a drive in Windows")
         if panel.runModal() == .OK, let url = panel.url {
             entry.sharedFolderPath = url.path
         }
@@ -144,11 +144,11 @@ struct HostEditor: View {
     private var passwordFooter: String {
         if !savePassword {
             return entry.hasSavedPassword
-                ? "Het bewaarde wachtwoord wordt uit de sleutelhanger verwijderd. Bij elke verbinding wordt het gevraagd."
-                : "Het wachtwoord wordt bij elke verbinding gevraagd. Daar kun je het alsnog laten bewaren."
+                ? String(localized: "The saved password will be removed from the keychain. You’ll be asked for it on every connection.")
+                : String(localized: "You’ll be asked for the password on every connection. You can still choose to save it there.")
         }
-        if missingPassword { return "Vul het wachtwoord in dat bewaard moet worden." }
-        return "Het wachtwoord staat versleuteld in je login-sleutelhanger, nooit in het adresboek."
+        if missingPassword { return String(localized: "Enter the password to save.") }
+        return String(localized: "The password is stored encrypted in your login keychain, never in the address book.")
     }
 
     private func save() {
@@ -157,7 +157,7 @@ struct HostEditor: View {
         entry.sharedFolderName = entry.sharedFolderName.replacingOccurrences(of: ",", with: " ")
         if entry.sharedFolderName.trimmingCharacters(in: .whitespaces).isEmpty { entry.sharedFolderName = "Mac" }
         if entry.sharedFolderPath.contains(",") {
-            error = "Het pad van de gedeelde map mag geen komma bevatten."
+            error = String(localized: "The path of the shared folder must not contain a comma.")
             return
         }
         do {
@@ -172,7 +172,7 @@ struct HostEditor: View {
             }
             if !entry.hasSavedPassword { entry.requireTouchID = false }
         } catch {
-            self.error = "Wachtwoord niet bewaard: \(error.localizedDescription)"
+            self.error = String(localized: "Password not saved: \(error.localizedDescription)")
             return
         }
         password = ""

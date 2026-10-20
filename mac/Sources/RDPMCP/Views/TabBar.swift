@@ -17,24 +17,24 @@ struct TabBar: View {
             }
             Menu {
                 if book.entries.isEmpty {
-                    Text("Adresboek is leeg")
+                    Text("Address book is empty")
                 }
                 ForEach(book.groups, id: \.self) { group in
-                    Section(group.isEmpty ? "Overige" : group) {
+                    Section(group.isEmpty ? String(localized: "Other") : group) {
                         ForEach(book.entries(in: group)) { entry in
                             Button(entry.displayName) { Task { await manager.connect(entry) } }
                         }
                     }
                 }
                 Divider()
-                Button("Nieuwe host…") { NotificationCenter.default.post(name: .newHost, object: nil) }
+                Button("New Host…") { NotificationCenter.default.post(name: .newHost, object: nil) }
             } label: {
                 Image(systemName: "plus")
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)
             .fixedSize()
-            .help("Nieuwe tab")
+            .help("New tab")
             .padding(.horizontal, 8)
 
             Button {
@@ -44,7 +44,7 @@ struct TabBar: View {
                     ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
             }
             .buttonStyle(.borderless)
-            .help(manager.focusMode ? "Volledig scherm verlaten (⌃⌘F)" : "Volledig scherm (⌃⌘F)")
+            .help(manager.focusMode ? Text("Exit full screen (⌃⌘F)") : Text("Full screen (⌃⌘F)"))
             .padding(.trailing, 10)
         }
         .frame(height: 34)
@@ -67,13 +67,13 @@ private struct TabItem: View {
                 Image(systemName: "macwindow")
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .help("Staat in een eigen venster")
+                    .help("In its own window")
             }
             if session.aiEnabled {
                 Image(systemName: "sparkles")
                     .font(.caption2)
                     .foregroundStyle(.orange)
-                    .help("AI-besturing staat aan")
+                    .help("AI control is on")
             }
             Button {
                 manager.close(session)
@@ -83,7 +83,7 @@ private struct TabItem: View {
             }
             .buttonStyle(.borderless)
             .opacity(hovering || isSelected ? 1 : 0)
-            .help("Tab sluiten (⌥⌘W)")
+            .help("Close tab (⌥⌘W)")
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 5)
@@ -97,17 +97,17 @@ private struct TabItem: View {
         }
         .onHover { hovering = $0 }
         .contextMenu {
-            Button("Opnieuw verbinden") { Task { await manager.reconnect(session) } }
+            Button("Reconnect") { Task { await manager.reconnect(session) } }
             if session.isDetached {
-                Button("Terug naar tabs") { manager.attach(session) }
+                Button("Back to Tabs") { manager.attach(session) }
             } else {
-                Button("Naar eigen venster") { manager.detach(session) }
+                Button("Move to Own Window") { manager.detach(session) }
             }
-            Button(session.aiEnabled ? "AI-besturing uitzetten" : "AI-besturing aanzetten") {
+            Button(session.aiEnabled ? String(localized: "Turn AI Control Off") : String(localized: "Turn AI Control On")) {
                 session.setAI(!session.aiEnabled)
             }
             Divider()
-            Button("Tab sluiten") { manager.close(session) }
+            Button("Close Tab") { manager.close(session) }
         }
     }
 }
@@ -156,11 +156,11 @@ struct StatusBar: View {
                     .transition(.opacity)
             }
             Toggle(isOn: Binding(get: { session.aiEnabled }, set: { session.setAI($0) })) {
-                Label("AI-besturing", systemImage: "sparkles")
+                Label("AI control", systemImage: "sparkles")
             }
             .toggleStyle(.switch)
             .controlSize(.mini)
-            .help("AI-besturing aan/uit (⌃⌥⇧A in de sessie)")
+            .help("AI control on/off (⌃⌥⇧A in the session)")
             if detached {
                 Button {
                     manager.attach(session)
@@ -168,14 +168,14 @@ struct StatusBar: View {
                     Image(systemName: "rectangle.stack")
                 }
                 .buttonStyle(.borderless)
-                .help("Terug naar de tabs (of sluit dit venster)")
+                .help("Back to the tabs (or close this window)")
                 Button {
                     session.view.window?.toggleFullScreen(nil)
                 } label: {
                     Image(systemName: "arrow.up.left.and.arrow.down.right")
                 }
                 .buttonStyle(.borderless)
-                .help("Volledig scherm (⌃⌘F)")
+                .help("Full screen (⌃⌘F)")
             } else {
                 Button {
                     manager.detach(session)
@@ -183,7 +183,7 @@ struct StatusBar: View {
                     Image(systemName: "macwindow.badge.plus")
                 }
                 .buttonStyle(.borderless)
-                .help("Naar een eigen venster, bv. voor een tweede scherm (⌥⌘D)")
+                .help("Move to its own window, e.g. for a second display (⌥⌘D)")
             }
         }
         .font(.callout)

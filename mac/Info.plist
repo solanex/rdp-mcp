@@ -17,7 +17,12 @@
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>CFBundleDevelopmentRegion</key>
-	<string>nl</string>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>nl</string>
+	</array>
 	<key>LSMinimumSystemVersion</key>
 	<string>26.0</string>
 	<key>LSApplicationCategoryType</key>
@@ -27,6 +32,6 @@
 	<key>NSSupportsAutomaticTermination</key>
 	<false/>
 	<key>NSFaceIDUsageDescription</key>
-	<string>Om een bewaard RDP-wachtwoord te gebruiken.</string>
+	<string>To use a saved RDP password.</string>
 </dict>
 </plist>

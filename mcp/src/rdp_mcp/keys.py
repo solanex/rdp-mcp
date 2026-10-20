@@ -67,7 +67,7 @@ def scancode(name: str) -> int:
     if key in letters:
         return letters[key]
     raise ValueError(
-        f"onbekende toets '{name}'. Gebruik bv. ctrl, alt, shift, win, enter, tab, "
+        f"unknown key '{name}'. Use e.g. ctrl, alt, shift, win, enter, tab, "
         "esc, f1-f12, up/down/left/right, home, end, delete, a-z, 0-9"
     )
 
@@ -76,7 +76,7 @@ def parse_combo(combo: str) -> list[int]:
     """'ctrl+alt+delete' -> lijst scancodes in indrukvolgorde."""
     parts = [p for p in combo.split("+") if p.strip()]
     if not parts:
-        raise ValueError("lege toetscombinatie")
+        raise ValueError("empty key combination")
     return [scancode(p) for p in parts]
 
 

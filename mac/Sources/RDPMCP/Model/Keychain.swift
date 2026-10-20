@@ -12,7 +12,7 @@ enum Keychain {
         var errorDescription: String? {
             switch self {
             case .status(let s):
-                return (SecCopyErrorMessageString(s, nil) as String?) ?? "sleutelhangerfout \(s)"
+                return (SecCopyErrorMessageString(s, nil) as String?) ?? String(localized: "keychain error \(s)")
             }
         }
     }
@@ -26,7 +26,7 @@ enum Keychain {
         let attributes: [String: Any] = [
             kSecValueData as String: Data(password.utf8),
             kSecAttrLabel as String: "RDP MCP – \(label)",
-            kSecAttrDescription as String: "RDP-wachtwoord",
+            kSecAttrDescription as String: "RDP password",
             kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlocked,
         ]
         var status = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)

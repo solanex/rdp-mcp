@@ -259,7 +259,7 @@ static UINT cb_server_format_data_request(CliprdrClientContext* cliprdr,
 
 	if (blocked)
 	{
-		static const char* msg = "Mac-klembord niet gedeeld: de plakopdracht kwam van de AI";
+		static const char* msg = "Mac clipboard not shared: the paste came from the AI";
 		if (s->cb.notice)
 			s->cb.notice(s->cb.user, msg);
 		else

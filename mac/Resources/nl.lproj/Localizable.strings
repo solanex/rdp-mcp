@@ -1,0 +1,141 @@
+/* Nederlandse vertaling. De sleutels zijn de Engelse teksten uit de code. */
+
+/* Menu's */
+"New Host…" = "Nieuwe host…";
+"Session" = "Sessie";
+"Next Tab" = "Volgende tab";
+"Previous Tab" = "Vorige tab";
+"Move to Own Window" = "Naar eigen venster";
+"Toggle AI Control" = "AI-besturing aan/uit";
+"Reconnect" = "Opnieuw verbinden";
+"Close Tab" = "Tab sluiten";
+"Back to Tabs" = "Terug naar tabs";
+"Turn AI Control Off" = "AI-besturing uitzetten";
+"Turn AI Control On" = "AI-besturing aanzetten";
+
+/* Instellingen */
+"Cmd key acts as Windows key" = "Cmd-toets werkt als Windows-toets";
+"By default Cmd acts as Ctrl, so Cmd+C and Cmd+V do what you expect. Applies to new tabs." = "Standaard werkt Cmd als Ctrl, zodat Cmd+C en Cmd+V doen wat je verwacht. Geldt voor nieuwe tabs.";
+"Shortcuts in a session go to Windows, except ⌥⌘ combinations (tabs), ⌃⌘F (full screen) and ⌘Q." = "Sneltoetsen in een sessie gaan naar Windows, behalve ⌥⌘-combinaties (tabs), ⌃⌘F (volledig scherm) en ⌘Q.";
+
+/* Afsluiten */
+"Close %lld open session(s)?" = "%lld open sessie(s) sluiten?";
+"The connections will be closed. You stay signed in on Windows." = "De verbindingen worden verbroken. Op Windows blijf je aangemeld.";
+"Quit" = "Afsluiten";
+"Cancel" = "Annuleren";
+
+/* Host-editor */
+"Connection" = "Verbinding";
+"Name" = "Naam";
+"e.g. Room 2.14" = "bv. Lokaal 2.14";
+"Group" = "Groep";
+"e.g. Office" = "bv. Kantoor";
+"server.example.com or IP" = "server.voorbeeld.be of IP";
+"Port" = "Poort";
+"optional" = "optioneel";
+"Username" = "Gebruikersnaam";
+"Domain" = "Domein";
+"e.g. EXAMPLE" = "bv. VOORBEELD";
+"Save password in the keychain" = "Wachtwoord bewaren in de sleutelhanger";
+"Password" = "Wachtwoord";
+"•••••••• (saved; leave empty to keep)" = "•••••••• (bewaard; leeg laten om te behouden)";
+"password" = "wachtwoord";
+"Require Touch ID for the saved password" = "Touch ID vragen voor het bewaarde wachtwoord";
+"Sign In" = "Aanmelden";
+"Play sound on the Mac" = "Geluid op de Mac afspelen";
+"Shared folder" = "Gedeelde map";
+"none" = "geen";
+"Choose…" = "Kies…";
+"None" = "Geen";
+"Name in Windows" = "Naam in Windows";
+"Sharing" = "Delen";
+"The folder shows up in Windows under This PC. Note: with AI control on, the AI can also reach the files in this folder through Explorer." = "De map verschijnt in Windows onder Deze pc. Let op: met AI-besturing aan kan de AI via de Verkenner ook bij de bestanden in deze map.";
+"Display and Input" = "Scherm en invoer";
+"Resolution" = "Resolutie";
+"Keyboard (Windows)" = "Toetsenbord (Windows)";
+"Share clipboard" = "Klembord delen";
+"AI control on when connecting" = "AI-besturing aan bij verbinden";
+"Don’t verify certificate" = "Certificaat niet controleren";
+"Delete" = "Verwijderen";
+"Add" = "Toevoegen";
+"Save" = "Bewaren";
+"Share" = "Delen";
+"Choose the folder that appears as a drive in Windows" = "Kies de map die in Windows als schijf verschijnt";
+"The saved password will be removed from the keychain. You’ll be asked for it on every connection." = "Het bewaarde wachtwoord wordt uit de sleutelhanger verwijderd. Bij elke verbinding wordt het gevraagd.";
+"You’ll be asked for the password on every connection. You can still choose to save it there." = "Het wachtwoord wordt bij elke verbinding gevraagd. Daar kun je het alsnog laten bewaren.";
+"Enter the password to save." = "Vul het wachtwoord in dat bewaard moet worden.";
+"The password is stored encrypted in your login keychain, never in the address book." = "Het wachtwoord staat versleuteld in je login-sleutelhanger, nooit in het adresboek.";
+"The path of the shared folder must not contain a comma." = "Het pad van de gedeelde map mag geen komma bevatten.";
+"Password not saved: %@" = "Wachtwoord niet bewaard: %@";
+
+/* Toetsenborden en resoluties */
+"Default" = "Standaard";
+"Belgian French" = "Belgisch-Frans";
+"Belgian (Period)" = "Belgisch (punt)";
+"Belgian (Comma)" = "Belgisch (komma)";
+"French" = "Frans";
+"Dutch" = "Nederlands";
+"US" = "VS";
+"Automatic (tab size)" = "Automatisch (tabblad)";
+
+/* Tabbalk en statusbalk */
+"Address book is empty" = "Adresboek is leeg";
+"Other" = "Overige";
+"New tab" = "Nieuwe tab";
+"Exit full screen (⌃⌘F)" = "Volledig scherm verlaten (⌃⌘F)";
+"Full screen (⌃⌘F)" = "Volledig scherm (⌃⌘F)";
+"In its own window" = "Staat in een eigen venster";
+"AI control is on" = "AI-besturing staat aan";
+"Close tab (⌥⌘W)" = "Tab sluiten (⌥⌘W)";
+"AI control" = "AI-besturing";
+"AI control on/off (⌃⌥⇧A in the session)" = "AI-besturing aan/uit (⌃⌥⇧A in de sessie)";
+"Back to the tabs (or close this window)" = "Terug naar de tabs (of sluit dit venster)";
+"Move to its own window, e.g. for a second display (⌥⌘D)" = "Naar een eigen venster, bv. voor een tweede scherm (⌥⌘D)";
+"AI control on" = "AI-besturing aan";
+"AI control off" = "AI-besturing uit";
+
+/* Adresboek */
+"Quick Connect" = "Snel verbinden";
+"host or IP address" = "host of IP-adres";
+"Connect" = "Verbinden";
+"Edit…" = "Bewerken…";
+"Duplicate" = "Dupliceren";
+"%@ (copy)" = "%@ (kopie)";
+"Delete…" = "Verwijderen…";
+"New Host" = "Nieuwe host";
+"Add a new host (⌥⌘N)" = "Nieuwe host toevoegen (⌥⌘N)";
+"Delete %@?" = "%@ verwijderen?";
+"A saved password is also removed from the keychain." = "Ook een bewaard wachtwoord wordt uit de sleutelhanger verwijderd.";
+"Password saved, Touch ID required" = "Wachtwoord bewaard, Touch ID vereist";
+"Password saved" = "Wachtwoord bewaard";
+"Address Book" = "Adresboek";
+"The address book could not be read (%@). A copy is in %@." = "Het adresboek kon niet gelezen worden (%1$@). Een kopie staat in %2$@.";
+"The address book could not be saved: %@" = "Het adresboek kon niet bewaard worden: %@";
+
+/* Sessies */
+"All sessions are in their own window" = "Alle sessies staan in een eigen venster";
+"No open sessions" = "Geen open sessies";
+"Double-click a host in the address book, or quick connect with the field at the top." = "Dubbelklik een host in het adresboek, of verbind snel via het veld bovenaan.";
+"Connecting to %@…" = "Verbinden met %@…";
+"Connection closed" = "Verbinding gesloten";
+"Connection failed" = "Verbinding mislukt";
+"Invalid settings" = "Ongeldige instellingen";
+"The session could not start" = "Sessie kon niet starten";
+"Unknown error" = "Onbekende fout";
+"use the password for %@" = "het wachtwoord voor %@ gebruiken";
+"keychain error %d" = "sleutelhangerfout %d";
+
+/* Certificaat */
+"The certificate of %@ has changed" = "Het certificaat van %@ is gewijzigd";
+"Unknown certificate for %@" = "Onbekend certificaat voor %@";
+"This may indicate an attack (man-in-the-middle). Only trust it if you know why it changed." = "Dit kan wijzen op een aanval (man-in-the-middle). Vertrouw het enkel als je weet waarom het veranderde.";
+"(certificate in PEM format)" = "(certificaat in PEM-formaat)";
+"Subject: %@\nIssuer: %@\nFingerprint: %@" = "Onderwerp: %1$@\nUitgever: %2$@\nVingerafdruk: %3$@";
+"Always Trust" = "Altijd vertrouwen";
+"Once" = "Eén keer";
+
+/* Aanmelden */
+"Sign in to %@" = "Aanmelden bij %@";
+"The password goes straight to the server and never to the AI." = "Het wachtwoord gaat rechtstreeks naar de server en nooit naar de AI.";
+"username" = "gebruikersnaam";
+"domain (e.g. EXAMPLE)" = "domein (bv. VOORBEELD)";
