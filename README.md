@@ -58,6 +58,11 @@ itself on first start.
 3. Ask Claude something, for example "open Notepad in PC01 and type a test
    sentence". In the MCP tools a session has the same name as in the address book.
 
+Claude can also open a host from the address book itself ("connect to PC01 and …").
+The app then signs in with the password saved in the keychain, or shows its sign-in
+window to you; Claude never sees or types the password. Claude can close the sessions
+it opened, but not the ones you opened.
+
 Every AI action briefly outlines the screen in orange and puts a crosshair where the
 AI placed the mouse. Your own mouse and keyboard always keep working. With AI
 control off, the AI can still take screenshots, but every mouse or keyboard action
@@ -114,11 +119,17 @@ was. With AI control off, the AI can neither read nor set the clipboard.
   your own user can reach it, and nothing goes over the network.
 - Anyone who can open that socket can control the session. Use an account with no
   more rights than needed.
+- The app has one more socket, `~/.rdp-mcp/app-<pid>.ctl`, with the same permissions.
+  Through it a local process of your user can list the address book and open hosts
+  with their saved passwords, without ever receiving the passwords.
 
 ## MCP tools
 
 | tool | what |
 |---|---|
+| `list_hosts` | hosts in the address book (without passwords) |
+| `open_session` | open a host from the address book; the app signs in |
+| `close_session` | close a session that `open_session` opened |
 | `list_rdp_sessions` | active sessions (name, resolution, AI on/off) |
 | `screenshot` | image of the remote screen, scaled down to max. 1280 px |
 | `click` | click (left/right/middle, double-click with `clicks=2`) |

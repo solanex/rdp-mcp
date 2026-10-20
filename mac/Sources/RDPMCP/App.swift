@@ -78,10 +78,15 @@ struct SettingsView: View {
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
     static weak var manager: SessionManager?
+    private var control: AppControl?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular) // ook als het programma zonder .app-bundel draait
         NSApp.activate(ignoringOtherApps: true)
+        if let manager = Self.manager {
+            control = AppControl(manager: manager)
+            control?.start()
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
@@ -97,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        control?.stop()
         Self.manager?.closeAllAndWait()
     }
 }

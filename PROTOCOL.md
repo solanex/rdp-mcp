@@ -42,3 +42,23 @@ OK 1920 1080 1 1 server.example.com Test PC 2.14
 MOVE 100 200
 OK
 ```
+
+## App socket
+
+The Mac app also listens on `~/.rdp-mcp/app-<pid>.ctl` (same directory, permissions
+`0600`). Through it the MCP server reads the address book and opens or closes
+sessions. Passwords never go over this socket: the app signs in with the keychain or
+shows its sign-in window to the user.
+
+| command | reply | note |
+|---|---|---|
+| `HOSTS` | `OK <n>` + `n` bytes | JSON list: `id`, `name`, `group`, `host`, `username`, `saved_password`, `touch_id`, `session` (id of an open session or `null`) |
+| `CONNECT <host-id>` | `OK <session-id> <new\|existing>` | opens the host like a double-click; answers after Touch ID, if the host requires it |
+| `STATE <session-id>` | `OK <state> [message]` | state: `connecting`, `waiting-for-user` (sign-in or certificate prompt open), `connected`, `disconnected`, `failed` |
+| `CLOSE <session-id>` | `OK` | only for sessions opened with `CONNECT` |
+
+The session id is the name of the session socket without `.sock` (`<pid>-<n>`).
+
+Errors: `ERR not-found ...`, `ERR cancelled ...` (Touch ID declined), `ERR failed ...`
+(the session could not start), `ERR not-allowed ...` (`CLOSE` on a session the user
+opened).

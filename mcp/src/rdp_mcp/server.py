@@ -18,7 +18,7 @@ from mcp.server.mcpserver.exceptions import ToolError
 from PIL import Image as PILImage
 
 from . import keys as keymap
-from .session import ClientError, Connection, Session, SessionInfo, list_sessions
+from .session import ClientError, Connection, Session, SessionInfo, connect_app, list_sessions
 
 MAX_EDGE = int(os.environ.get("RDP_MCP_MAX_EDGE", "1280"))
 IMAGE_FORMAT = os.environ.get("RDP_MCP_IMAGE_FORMAT", "png").lower()
@@ -36,7 +36,8 @@ mcp = MCPServer(
         "Controls a remote desktop (RDP) that the user watches live in the rdp-mcp "
         "window. Take a screenshot first; all coordinates are pixels in the latest "
         "screenshot. Take another screenshot after actions to check the result. "
-        "The user types passwords themselves."
+        "The user types passwords themselves. To open a host from the address book "
+        "of the RDP MCP app, use list_hosts and open_session."
     ),
 )
 
@@ -45,8 +46,8 @@ def _pick(session: str | None) -> tuple[Session, SessionInfo]:
     sessions = list_sessions()
     if not sessions:
         raise ToolError(
-            "no active rdp-mcp session found. Ask the user to connect to a host in "
-            "the RDP MCP app (or start rdp-mcp-client /v:host /u:user)."
+            "no active rdp-mcp session found. Open one with list_hosts and open_session, "
+            "or ask the user to connect in the RDP MCP app."
         )
     if session is None:
         if len(sessions) > 1:
@@ -65,6 +66,19 @@ def _pick(session: str | None) -> tuple[Session, SessionInfo]:
     if found[1].width <= 0:
         raise ToolError(f"session {found[1].name} is still connecting; try again shortly")
     return found
+
+
+def _pick_any(session: str) -> tuple[Session, SessionInfo]:
+    """Zoals _pick, maar ook voor sessies die nog niet verbonden zijn."""
+    sessions = list_sessions()
+    matches = [x for x in sessions if x[1].id == session] or [
+        x for x in sessions if x[1].name.lower() == session.lower()
+    ]
+    if not matches:
+        raise ToolError(f"session '{session}' not found")
+    if len(matches) > 1:
+        raise ToolError(f"several sessions are named '{session}', use the id")
+    return matches[0]
 
 
 def _scale(info: SessionInfo) -> float:
@@ -139,6 +153,103 @@ def list_rdp_sessions() -> list[dict]:
         }
         for _, info in list_sessions()
     ]
+
+
+@mcp.tool()
+def list_hosts() -> list[dict]:
+    """List the hosts in the address book of the RDP MCP app. Open one with open_session.
+
+    Passwords are never included. 'saved_password' tells whether the app can sign in
+    without asking the user; 'session' is the id of an open session for that host.
+    """
+    try:
+        with connect_app() as conn:
+            hosts = conn.hosts()
+    except ClientError as e:
+        raise ToolError(str(e)) from e
+    return [
+        {
+            "id": h["id"],
+            "name": h["name"],
+            "group": h["group"],
+            "host": h["host"],
+            "username": h["username"],
+            "saved_password": h["saved_password"],
+            "touch_id": h["touch_id"],
+            "session": h["session"],
+        }
+        for h in hosts
+    ]
+
+
+def _find_host(hosts: list[dict], wanted: str) -> dict:
+    w = wanted.strip().lower()
+    for key in ("id", "name", "host"):
+        matches = [h for h in hosts if str(h[key]).lower() == w]
+        if len(matches) == 1:
+            return matches[0]
+        if len(matches) > 1:
+            ids = ", ".join(f"{h['id']} ({h['name']})" for h in matches)
+            raise ToolError(f"several hosts match '{wanted}', pass the id: {ids}")
+    names = ", ".join(h["name"] for h in hosts) or "(empty)"
+    raise ToolError(f"no host '{wanted}' in the address book. Available: {names}")
+
+
+@mcp.tool()
+def open_session(host: str, wait_seconds: float = 60) -> str:
+    """Open a host from the address book (name, host name or id from list_hosts) in the app.
+
+    The app signs in with the password saved in the keychain, or shows its sign-in
+    window to the user; you never type a password. Waits until the session is
+    connected, up to wait_seconds (max 120). If the user still has to sign in, accept
+    a certificate or confirm Touch ID, this returns while waiting; call it again later.
+    """
+    wait_seconds = max(0.0, min(wait_seconds, 120.0))
+    try:
+        with connect_app() as conn:
+            target = _find_host(conn.hosts(), host)
+        # Touch ID kan even duren: CONNECT antwoordt pas daarna
+        with connect_app(timeout=wait_seconds + 30) as conn:
+            sid, new = conn.open_host(target["id"])
+            deadline = time.monotonic() + wait_seconds
+            while True:
+                state, message = conn.session_state(sid)
+                if state in ("connected", "failed", "disconnected") or time.monotonic() >= deadline:
+                    break
+                time.sleep(0.5)
+    except TimeoutError as e:
+        raise ToolError("the app did not answer in time (waiting for Touch ID?); try again") from e
+    except ClientError as e:
+        if e.code == "cancelled":
+            raise ToolError("the user did not confirm with Touch ID; the session was not opened") from e
+        raise ToolError(str(e)) from e
+
+    name = target["name"]
+    if state == "connected":
+        ai = next((i.ai_enabled for _, i in list_sessions() if i.id == sid), None)
+        note = "" if ai is not False else " AI control is OFF for this host; ask the user to turn it on."
+        opened = "Opened" if new else "Already open:"
+        return f"{opened} session {sid} '{name}', connected. Use session='{sid}' or '{name}'.{note}"
+    if state in ("failed", "disconnected"):
+        raise ToolError(f"session '{name}' {state}: {message or 'no details'}")
+    if state == "waiting-for-user":
+        return (f"Session {sid} '{name}' is waiting for the user (sign-in or certificate prompt "
+                "in the app). Ask the user to complete it, then call open_session again.")
+    return f"Session {sid} '{name}' is still connecting; call open_session again shortly."
+
+
+@mcp.tool()
+def close_session(session: str) -> str:
+    """Close a session that was opened with open_session. Sessions the user opened stay open."""
+    s, info = _pick_any(session)
+    try:
+        with connect_app() as conn:
+            conn.close_session(s.id)
+    except ClientError as e:
+        if e.code == "not-allowed":
+            raise ToolError("the user opened this session, so only the user can close it") from e
+        raise ToolError(str(e)) from e
+    return f"closed session {s.id} '{info.name}'"
 
 
 @mcp.tool(structured_output=False)

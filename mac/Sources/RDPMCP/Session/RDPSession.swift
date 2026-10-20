@@ -30,6 +30,17 @@ final class RDPSession: ObservableObject, Identifiable {
     /// rdpmcp_session*; nil na close()
     private(set) var handle: OpaquePointer?
     var dynamicResolution: Bool { entry.isAutoSize }
+    /// Naam van de control-socket zonder .sock, zoals de MCP-server de sessie noemt ("<pid>-<n>")
+    private(set) var socketID: String?
+    /// Geopend via de MCP-server; enkel zulke sessies mag de AI ook sluiten
+    var openedByAI = false
+
+    /// Er staat een certificaat- of wachtwoordvraag open
+    var isWaitingForUser: Bool {
+        promptLock.lock()
+        defer { promptLock.unlock() }
+        return pendingPrompt != nil
+    }
 
     /// Wordt aangeroepen als de gebruiker in een wachtwoordvraag "bewaren" aanvinkt
     var onSavePassword: ((HostEntry, String, String, String) -> Void)?
@@ -147,6 +158,9 @@ final class RDPSession: ObservableObject, Identifiable {
             close()
             status = .failed(String(localized: "The session could not start"))
             return false
+        }
+        if let path = rdpmcp_session_socket_path(h) {
+            socketID = URL(fileURLWithPath: String(cString: path)).deletingPathExtension().lastPathComponent
         }
         return true
     }

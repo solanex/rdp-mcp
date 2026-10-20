@@ -15,7 +15,7 @@ final class SessionManager: ObservableObject {
     var contentSize = CGSize(width: 1280, height: 800)
     @AppStorage("cmdAsWin") var cmdAsWin = false
 
-    private let book: AddressBook
+    let book: AddressBook
     private var detachedWindows: [UUID: NSWindow] = [:]
     private var keyMonitor: Any?
     private var clipboardTimer: Timer?
@@ -40,22 +40,24 @@ final class SessionManager: ObservableObject {
 
     // MARK: - tabs
 
-    @MainActor
-    func connect(_ entry: HostEntry) async {
+    /// Geeft de nieuwe (of al open) sessie terug; nil als Touch ID geweigerd werd
+    @MainActor @discardableResult
+    func connect(_ entry: HostEntry, openedByAI: Bool = false) async -> RDPSession? {
         if let open = session(for: entry) {
             selectedID = open.id
-            return
+            return open
         }
         var password: String?
         if entry.hasSavedPassword {
             if entry.requireTouchID {
                 let ok = await Keychain.authenticate(reason: String(localized: "use the password for \(entry.displayName)"))
-                guard ok else { return }
+                guard ok else { return nil }
             }
             password = Keychain.load(account: entry.id)
         }
 
         let session = RDPSession(entry: entry)
+        session.openedByAI = openedByAI
         session.view.cmdAsWin = cmdAsWin
         session.onNeedsAttention = { [weak self] s in self?.selectedID = s.id }
         if book.entry(id: entry.id) != nil {
@@ -71,6 +73,8 @@ final class SessionManager: ObservableObject {
             let pb = NSPasteboard.general
             session.localClipboardChanged(text: pb.string(forType: .string), dib: ClipboardImage.dib(from: pb))
         }
+        if openedByAI { session.show(notice: String(localized: "Opened by the AI")) }
+        return session
     }
 
     @MainActor
@@ -80,7 +84,7 @@ final class SessionManager: ObservableObject {
         if session.isDetached { attach(session) } // de nieuwe verbinding komt als tab
         session.close()
         sessions.remove(at: index)
-        await connect(entry)
+        await connect(entry, openedByAI: session.openedByAI)
         // nieuwe tab op dezelfde plaats zetten
         if let new = sessions.last, sessions.count > index {
             sessions.removeLast()
